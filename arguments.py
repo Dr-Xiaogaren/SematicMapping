@@ -15,7 +15,7 @@ def get_args():
                         help="""how many training processes to use (default:5)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus""")
-    parser.add_argument('--num_processes_per_gpu', type=int, default=6)
+    parser.add_argument('--num_processes_per_gpu', type=int, default=1)
     parser.add_argument('--num_processes_on_first_gpu', type=int, default=1)
     parser.add_argument('--eval', type=int, default=0,
                         help='0: Train, 1: Evaluate (default: 0)')
