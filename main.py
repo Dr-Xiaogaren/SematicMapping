@@ -155,12 +155,13 @@ def main():
                             int(c * 100.0 / args.map_resolution)]
 
             full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
-
+            # boundary index
             lmb[e] = get_local_map_boundaries((loc_r, loc_c),
                                               (local_w, local_h),
                                               (full_w, full_h))
 
             planner_pose_inputs[e, 3:] = lmb[e]
+            # left down absolute location
             origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                           lmb[e][0] * args.map_resolution / 100.0, 0.]
 
@@ -168,6 +169,7 @@ def main():
             local_map[e] = full_map[e, :,
                                     lmb[e, 0]:lmb[e, 1],
                                     lmb[e, 2]:lmb[e, 3]]
+            # absolute reference form left-down corner
             local_pose[e] = full_pose[e] - \
                 torch.from_numpy(origins[e]).to(device).float()
 

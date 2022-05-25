@@ -74,9 +74,9 @@ def get_args():
                         help="path to config yaml containing task information")
     parser.add_argument("--split", type=str, default="train",
                         help="dataset split (train | val | val_mini) ")
-    parser.add_argument('--camera_height', type=float, default=0.88,
+    parser.add_argument('--camera_height', type=float, default=0.3,
                         help="agent camera height in metres")
-    parser.add_argument('--hfov', type=float, default=79.0,
+    parser.add_argument('--hfov', type=float, default=70,
                         help="horizontal field of view in degrees")
     parser.add_argument('--turn_angle', type=float, default=30,
                         help="Agent turn angle in degrees")
@@ -200,7 +200,7 @@ def get_args():
                 args.num_processes_on_first_gpu = num_processes_on_first_gpu
                 args.num_processes_per_gpu = 0
                 args.num_processes = num_processes_on_first_gpu
-                assert args.num_processes > 0, "Insufficient GPU memory"
+#               assert args.num_processes > 0, "Insufficient GPU memory"
             else:
                 num_threads = num_processes_per_gpu * (num_gpus - 1) \
                     + num_processes_on_first_gpu

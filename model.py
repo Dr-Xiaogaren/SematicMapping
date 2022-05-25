@@ -135,7 +135,7 @@ class Semantic_Mapping(nn.Module):
     Semantic_Mapping
     """
 
-    def __init__(self, args):
+    def __init__(self, args, config):
         super(Semantic_Mapping, self).__init__()
 
         self.device = args.device
@@ -167,11 +167,11 @@ class Semantic_Mapping(nn.Module):
         vr = self.vision_range
 
         self.init_grid = torch.zeros(
-            args.num_processes, 1 + self.num_sem_categories, vr, vr,
+            config.get("n_robots"), 1 + self.num_sem_categories, vr, vr,
             self.max_height - self.min_height
         ).float().to(self.device)
         self.feat = torch.ones(
-            args.num_processes, 1 + self.num_sem_categories,
+            config.get("n_robots"), 1 + self.num_sem_categories,
             self.screen_h // self.du_scale * self.screen_w // self.du_scale
         ).float().to(self.device)
 
