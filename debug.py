@@ -30,8 +30,8 @@ def plot(grid):
 
     show_grid = grid
     plt.ion()
-    axsimg = plt.imshow(show_grid, cmap='binary')
-    # plt.show(show_grid, cmap='')
+    # axsimg = plt.imshow(show_grid, cmap='binary')
+    axsimg = plt.imshow(show_grid, cmap='tab20b')
     plt.draw()
     plt.pause(0.5)
     return axsimg
@@ -99,7 +99,7 @@ def main():
     args = get_args()
     env_config_file = "configs/multi_robot_mapping_debug.yaml"
     env_config = parse_config(env_config_file)
-    render_mode = "headless" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    render_mode = "gui_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
     env = iGibsonEnv(config_file=env_config_file, mode=render_mode, use_pb_gui=False, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
     num_robot = env_config.get("n_robots")
     device = args.device = torch.device("cuda:0")
@@ -236,7 +236,7 @@ def main():
             # print("action", action)
             # action_list = [(np.array([0.2, -0.2]), ), (np.array([0, 0.5]), ), (np.array([-0.2, 0.2]), )]
             # action = random.choice(action_list)
-            # action = (np.array([0.2, -0.2]), )
+            action = (np.array([0.2, -0.2]), )
             state, reward, done, _ = env.step(action)
             print("------------------------------------------------------------")
             # plot(state["depth"][0])
@@ -261,7 +261,7 @@ def main():
                 sem_map_module(bchw_rgbd_obs, diff_pose, local_map, local_pose)
 
             seg_local = bchw_rgbd_obs[0, 4:, :, :].argmax(0).cpu().numpy()
-            plot(local_map.cpu().numpy()[0][0])
+            # plot(local_map.cpu().numpy()[0][0])
             # print("diff_location", diff_pose)
 
             last_poses = poses
@@ -298,6 +298,10 @@ def main():
                     planner_pose_inputs[e, 3:] = lmb[e]
                     origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                                   lmb[e][0] * args.map_resolution / 100.0, 0.]
+
+                    local_map[e, -1, :, :] = 1e-5
+                    plot_grid = local_map[0, 4:, :, :].argmax(0).cpu().numpy()/15
+                    plot(plot_grid)
 
                     local_map[e] = full_map[e, :,
                                    lmb[e, 0]:lmb[e, 1],
