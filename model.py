@@ -161,6 +161,7 @@ class Semantic_Mapping(nn.Module):
                           self.resolution // 2, 0, np.pi / 2.0]
         self.camera_matrix = du.get_camera_matrix(
             self.screen_w, self.screen_h, self.fov)
+        self.camera_elevation_degree = args.camera_elevation_degree
 
         self.pool = ChannelPool(1)
 
@@ -183,7 +184,7 @@ class Semantic_Mapping(nn.Module):
             depth, self.camera_matrix, self.device, scale=self.du_scale)
 
         agent_view_t = du.transform_camera_view_t(
-            point_cloud_t, self.agent_height, 0, self.device)
+            point_cloud_t, self.agent_height, self.camera_elevation_degree, self.device)
 
         agent_view_centered_t = du.transform_pose_t(
             agent_view_t, self.shift_loc, self.device)
@@ -263,7 +264,7 @@ class Semantic_Mapping(nn.Module):
 
         current_poses = get_new_pose_batch(poses_last, corrected_pose)
         st_pose = current_poses.clone().detach()
-
+        # offset to the local map center (proportion)
         st_pose[:, :2] = - (st_pose[:, :2]
                             * 100.0 / self.resolution
                             - self.map_size_cm // (self.resolution * 2)) /\

@@ -11,7 +11,7 @@ from agents.utils.semantic_prediction import SemanticPredMaskRCNN
 import matplotlib.pyplot as plt
 import pylab
 from envs.utils.pose import get_l2_distance
-
+import random
 
 def get_rel_pose_change(pos2, pos1):
     x1, y1, o1 = pos1[0][0], pos1[0][1], pos1[0][2]
@@ -31,6 +31,7 @@ def plot(grid):
     show_grid = grid
     plt.ion()
     axsimg = plt.imshow(show_grid, cmap='binary')
+    # plt.show(show_grid, cmap='')
     plt.draw()
     plt.pause(0.5)
     return axsimg
@@ -98,11 +99,12 @@ def main():
     args = get_args()
     env_config_file = "configs/multi_robot_mapping_debug.yaml"
     env_config = parse_config(env_config_file)
-    render_mode = "gui_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    render_mode = "headless" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
     env = iGibsonEnv(config_file=env_config_file, mode=render_mode, use_pb_gui=False, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
     num_robot = env_config.get("n_robots")
     device = args.device = torch.device("cuda:0")
     args.hfov = 2 * np.arctan(np.tan(env_config["vertical_fov"] / 180.0 * np.pi / 2.0) * env_config["image_width"] / env_config["image_height"]) / np.pi * 180.0
+    args.camera_elevation_degree = -0.35*57.29577951308232
     # Initialize map variables:
     # Full map consists of multiple channels containing the following:
     # 1. Obstacle Map
@@ -162,8 +164,8 @@ def main():
 
     def init_map_and_pose():
         full_map.fill_(0.)
-        full_pose.fill_(0.)
-        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0
+        full_pose.fill_(0.)     # absolute coordinate
+        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  # center of the grid map (m)
 
         locs = full_pose.cpu().numpy()
         planner_pose_inputs[:, :3] = locs
@@ -174,11 +176,13 @@ def main():
 
             full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
 
+            # get the index of local map boundary
             lmb[e] = get_local_map_boundaries((loc_r, loc_c),
                                               (local_w, local_h),
                                               (full_w, full_h))
 
             planner_pose_inputs[e, 3:] = lmb[e]
+            # the absolute coordinate of boundary point
             origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                           lmb[e][0] * args.map_resolution / 100.0, 0.]
 
@@ -186,6 +190,7 @@ def main():
             local_map[e] = full_map[e, :,
                            lmb[e, 0]:lmb[e, 1],
                            lmb[e, 2]:lmb[e, 3]]
+            # relative coordinate of robot from boundary
             local_pose[e] = full_pose[e] - \
                             torch.from_numpy(origins[e]).to(device).float()
 
@@ -217,7 +222,7 @@ def main():
         diff_pose = torch.from_numpy(get_rel_pose_change(poses.cpu().numpy(), last_poses.cpu().numpy())).float().to(device)
         _, local_map, _, local_pose = \
             sem_map_module(bchw_rgbd_obs, diff_pose, local_map, local_pose)
-
+        plot(local_map.cpu().numpy()[0][0])
         locs = local_pose.cpu().numpy()
         for e in range(num_robot):
             r, c = locs[e, 1], locs[e, 0]
@@ -229,12 +234,14 @@ def main():
         for time_step in range(500):  # 10 seconds
             action = env.action_space.sample()
             # print("action", action)
-            # action = (np.array([0.5, -0.5]), )
+            # action_list = [(np.array([0.2, -0.2]), ), (np.array([0, 0.5]), ), (np.array([-0.2, 0.2]), )]
+            # action = random.choice(action_list)
+            # action = (np.array([0.2, -0.2]), )
             state, reward, done, _ = env.step(action)
             print("------------------------------------------------------------")
             # plot(state["depth"][0])
-            for _ in range(1):
-                env.simulator.step()
+            # for _ in range(5):
+            #     env.simulator.step()
             # ---------------------------------------------------#
 
             rgbd_obs = np.concatenate((state["rgb"], state["depth"]), axis=-1)
@@ -248,14 +255,14 @@ def main():
             diff_pose = torch.from_numpy(get_rel_pose_change(poses.cpu().numpy(), last_poses.cpu().numpy())).float().to(
                 device)
             # print("diff_pose",diff_pose)
+            depth_local = bchw_rgbd_obs[0, 3, :, :].cpu().numpy()
+            # plot(depth_local)
             fp_map_pred, local_map, _, local_pose = \
                 sem_map_module(bchw_rgbd_obs, diff_pose, local_map, local_pose)
 
             seg_local = bchw_rgbd_obs[0, 4:, :, :].argmax(0).cpu().numpy()
-            depth_local = bchw_rgbd_obs[0, 3, :, :].cpu().numpy()
-            # plot(local_map.cpu().numpy()[0][0])
-            print("diff_location", last_poses)
-            # plot(depth_local)
+            plot(local_map.cpu().numpy()[0][0])
+            # print("diff_location", diff_pose)
 
             last_poses = poses
 
@@ -298,11 +305,12 @@ def main():
                     local_pose[e] = full_pose[e] - \
                                     torch.from_numpy(origins[e]).to(device).float()
                 grid = local_map.cpu().numpy()
-                plot(grid[0][0])
+                # plot(grid[0][0])
 
             coollision_info = env.collision_links
             location = [robot.get_position() for robot in env.robots]
             print("camara_location", env.robots[0].eyes.get_position())
+            print("camara_orientation", env.robots[0].eyes.get_rpy())
             # print("robot_location", location)
             # print("reward", reward)
             # print('done', done)

@@ -20,7 +20,7 @@ initial_orn: [[0,0,0]]
 robots:
   -
     id: 0
-    name: Turtlebot
+    name: Locobot
     action_type: continuous
     action_normalize: true
     base_name: null

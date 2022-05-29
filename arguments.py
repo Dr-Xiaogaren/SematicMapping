@@ -10,8 +10,8 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
     parser.add_argument('--auto_gpu_config', type=int, default=1)
-    parser.add_argument('--total_num_scenes', type=str, default="auto")
-    parser.add_argument('-n', '--num_processes', type=int, default=5,
+    parser.add_argument('--total_num_scenes', type=str, default="1")
+    parser.add_argument('-n', '--num_processes', type=int, default=1,
                         help="""how many training processes to use (default:5)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus""")
@@ -74,7 +74,7 @@ def get_args():
                         help="path to config yaml containing task information")
     parser.add_argument("--split", type=str, default="train",
                         help="dataset split (train | val | val_mini) ")
-    parser.add_argument('--camera_height', type=float, default=0.3,
+    parser.add_argument('--camera_height', type=float, default=0.87,
                         help="agent camera height in metres")
     parser.add_argument('--hfov', type=float, default=70,
                         help="horizontal field of view in degrees")
@@ -197,10 +197,10 @@ def get_args():
                     """Insufficient GPU memory for evaluation"""
 
             if num_gpus == 1:
-                args.num_processes_on_first_gpu = num_processes_on_first_gpu
+                args.num_processes_on_first_gpu = 1
                 args.num_processes_per_gpu = 0
-                args.num_processes = num_processes_on_first_gpu
-#               assert args.num_processes > 0, "Insufficient GPU memory"
+                args.num_processes = 1
+                assert args.num_processes > 0, "Insufficient GPU memory"
             else:
                 num_threads = num_processes_per_gpu * (num_gpus - 1) \
                     + num_processes_on_first_gpu
