@@ -3,8 +3,7 @@ from torchvision import transforms
 from PIL import Image
 
 
-
-def preprocess_obs(args, obs, use_seg, sem_pred):
+def preprocess_obs(config, args, obs, use_seg, sem_pred):
     res = transforms.Compose(
             [transforms.ToPILImage(),
              transforms.Resize((args.frame_height, args.frame_width),
@@ -15,7 +14,7 @@ def preprocess_obs(args, obs, use_seg, sem_pred):
 
     sem_seg_pred = get_sem_pred(sem_pred,
         rgb.astype(np.uint8), use_seg=use_seg)
-    depth = preprocess_depth(depth, args.min_depth, args.max_depth)
+    depth = preprocess_depth(depth, config["depth_low"], config["depth_high"])
     # depth = depth[:, :, 0]
 
     ds = args.env_frame_width // args.frame_width  # Downscaling factor

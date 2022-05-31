@@ -220,7 +220,7 @@ class SemanticMappingTask(BaseTask):
         # preprocess the obsevation
         bchw_rgbd_obs = []
         for i in range(rgbd_obs.shape[0]):
-            bchw_rgbd_obs.append(preprocess_obs(args=self.args, obs=rgbd_obs[i], use_seg=True, sem_pred=self.sem_pred))
+            bchw_rgbd_obs.append(preprocess_obs(config=self.config, args=self.args, obs=rgbd_obs[i], use_seg=True, sem_pred=self.sem_pred))
         bchw_rgbd_obs = torch.from_numpy(np.asarray(bchw_rgbd_obs)).float().to(self.device)
         # prepare the differential location
         orientation = torch.from_numpy(np.asarray([robot.eyes.get_rpy() for robot in env.robots])).float().to(self.device)
