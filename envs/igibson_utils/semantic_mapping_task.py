@@ -69,7 +69,7 @@ class SemanticMappingTask(BaseTask):
         self.lmb = np.zeros((env.n_robots, 4)).astype(int)
 
         # initial the variable
-        self.init_map_and_pose()
+        self.init_map_and_pose(env)
 
         # Semantic Mapping
         self.sem_map_module = Semantic_Mapping(self.args, self.config, self.device).to(self.device)
@@ -101,7 +101,7 @@ class SemanticMappingTask(BaseTask):
 
         return [gx1, gx2, gy1, gy2]
 
-    def init_map_and_pose(self):
+    def init_map_and_pose(self, env):
         self.full_map.fill_(0.)
         self.full_pose.fill_(0.)  # absolute coordinate
         self.full_pose[:, :2] = self.args.map_size_cm / 100.0 / 2.0  # center of the grid map (m)
@@ -131,7 +131,14 @@ class SemanticMappingTask(BaseTask):
             # relative coordinate of robot from boundary
             self.local_pose[e] = self.full_pose[e] - \
                             torch.from_numpy(self.origins[e]).to(self.device).float()
-            self.last_pose[e] =self.local_pose[e]
+
+            # prepare the differential location
+            orientation = torch.from_numpy(np.asarray([robot.eyes.get_rpy() for robot in env.robots])).float().to(
+                self.device)
+            self.poses = torch.from_numpy(np.asarray([robot.eyes.get_position() for robot in env.robots])).float().to(
+                self.device)
+            self.poses[:, -1] = orientation[:, 2]
+            self.last_pose = self.poses
 
 
     def reset_scene(self, env):
@@ -177,7 +184,7 @@ class SemanticMappingTask(BaseTask):
             env.land(robot, self.initial_pos[i], self.initial_orn[i])
 
     def reset_variables(self, env):
-        self.init_map_and_pose()
+        self.init_map_and_pose(env)
         self.robot_pos = [self.initial_pos[i, 0:2] for i in range(env.n_robots)]
 
     def get_termination(self, env, collision_links=[], action=None, info={}):
@@ -248,15 +255,15 @@ class SemanticMappingTask(BaseTask):
         bchw_rgbd_obs = torch.from_numpy(np.asarray(bchw_rgbd_obs)).float().to(self.device)
         # prepare the differential location
         orientation = torch.from_numpy(np.asarray([robot.eyes.get_rpy() for robot in env.robots])).float().to(self.device)
-        poses = torch.from_numpy(np.asarray([robot.eyes.get_position() for robot in env.robots])).float().to(self.device)
-        poses[:, -1] = orientation[:, 2]
-        diff_pose = torch.from_numpy(get_diff_pose(poses.cpu().numpy(), self.last_pose.cpu().numpy())).float().to(
+        self.poses = torch.from_numpy(np.asarray([robot.eyes.get_position() for robot in env.robots])).float().to(self.device)
+        self.poses[:, -1] = orientation[:, 2]
+        diff_pose = torch.from_numpy(get_diff_pose(self.poses.cpu().numpy(), self.last_pose.cpu().numpy())).float().to(
             self.device)
         # semantic mapping
         _, self.local_map, _, self.local_pose = \
             self.sem_map_module(bchw_rgbd_obs, diff_pose, self.local_map, self.local_pose)
 
-        self.last_pose = poses
+        self.last_pose = self.poses
 
         self.local_map[:, 2, :, :].fill_(0.)  # Resetting current location chan
         # locate the location of robots

@@ -4,6 +4,8 @@ from arguments import get_args
 from igibson.utils.utils import parse_config
 
 import matplotlib.pyplot as plt
+
+
 def plot(grid):
 
     show_grid = grid
@@ -14,12 +16,34 @@ def plot(grid):
     plt.pause(0.5)
     return axsimg
 
+
+def render(observation, robot_id):
+    plt.ion()
+    color_low = 0.07
+    assert robot_id < observation.shape[0], "robot_id must be in range"
+    obstacle = np.where(observation[robot_id, 0, :, :] > 0.8, 1, observation[robot_id, 0, :, :])
+    semantic_map = observation[robot_id, 4:, :, :]
+    semantic_map = np.concatenate([np.zeros((1, semantic_map.shape[-1], semantic_map.shape[-1])), semantic_map])
+    semantic_map = semantic_map.argmax(0)
+    plot_map = obstacle
+    for class_id in range(1, 17):
+        index = np.where(semantic_map == class_id)
+        for r, c in zip(index[0].tolist(), index[1].tolist()):
+            plot_map[r][c] = color_low + 0.05*class_id
+
+    axsimg = plt.imshow(plot_map, cmap='tab20')
+    plt.draw()
+    plt.pause(0.5)
+
+
+
+
 def main():
     args = get_args()
     env_config_file = "configs/multi_robot_semantic_mapping.yaml"
     env_config = parse_config(env_config_file)
-    render_mode = "headless" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
-    env = MultiRobotEnv(args=args, config_file=env_config_file, mode=render_mode, use_pb_gui=False, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
+    render_mode = "gui_non_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    env = MultiRobotEnv(args=args, config_file=env_config_file, mode=render_mode, use_pb_gui=True, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
     for ep in range(10):
         env.reset()
         floor = env.scene.floor_map
@@ -39,8 +63,9 @@ def main():
             ang_vel = 0.2 * env.robots[0].wheel_radius * 2.0 / env.robots[0].wheel_axle_length
             map = state["task_obs"]
             semantic_map = map[2, 4:, :, :].argmax(0)
-            plot(semantic_map)
-        plt.close(fig)
+            # plot(map[0][0])
+            render(map, 0)
+        # plt.close(fig)
 
 
 
