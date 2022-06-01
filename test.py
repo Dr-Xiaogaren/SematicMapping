@@ -18,12 +18,14 @@ def main():
     args = get_args()
     env_config_file = "configs/multi_robot_semantic_mapping.yaml"
     env_config = parse_config(env_config_file)
-    render_mode = "gui_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    render_mode = "headless" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
     env = MultiRobotEnv(args=args, config_file=env_config_file, mode=render_mode, use_pb_gui=False, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
-    for ep in range(3):
+    for ep in range(10):
         env.reset()
+        floor = env.scene.floor_map
+        # plot(floor[0])
         fig = plt.figure()
-        for i in range(20):
+        for i in range(100):
             # action = env.action_space.sample()
             # print("action", action)
             # action_list = [(np.array([0.2, -0.2]), ), (np.array([0, 0.5]), ), (np.array([-0.2, 0.2]), )]
@@ -36,9 +38,10 @@ def main():
             lin_vel = 0.5 * max_wheel_joint_vels[0]
             ang_vel = 0.2 * env.robots[0].wheel_radius * 2.0 / env.robots[0].wheel_axle_length
             map = state["task_obs"]
-            semantic_map = (map[0, 4:, :, :].argmax(0))/17
-            plot(map[0][0])
+            semantic_map = map[2, 4:, :, :].argmax(0)
+            plot(semantic_map)
         plt.close(fig)
+
 
 
 if __name__ == "__main__":

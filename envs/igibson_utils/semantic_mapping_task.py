@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import pybullet as p
 import torch
@@ -149,6 +151,28 @@ class SemanticMappingTask(BaseTask):
 
         :param env: environment instance
         """
+        if self.args.random_initial_location:
+            initial_pos = []
+            travel_map = env.scene.floor_map[0]
+            travel_map_revolution = env.scene.trav_map_resolution
+            grid_length = travel_map.shape[0]
+            index_travelable = np.where(travel_map == 255)
+            for i in range(self.n_robots):
+                choose = random.randrange(0, index_travelable[0].shape[0])
+                y = (float(index_travelable[0][choose])-grid_length//2)*travel_map_revolution
+                x = (float(index_travelable[1][choose])-grid_length//2)*travel_map_revolution
+                min_distance = min([np.linalg.norm(np.array([x, y, 0.0])-loc) for loc in initial_pos]) \
+                    if len(initial_pos) != 0 else 0.5
+                while not (env.test_valid_position(env.robots[i], np.array([x, y, 0.0])) and
+                           (0.5 <= min_distance <= 5.0)):
+                    choose = random.randrange(0, index_travelable[0].shape[0])
+                    y = (float(index_travelable[0][choose])-grid_length//2) * travel_map_revolution
+                    x = (float(index_travelable[1][choose]) - grid_length // 2) * travel_map_revolution
+                    min_distance = min([np.linalg.norm(np.array([x, y, 0.0]) - loc) for loc in initial_pos]) \
+                        if len(initial_pos) != 0 else 0.5
+                initial_pos.append([x, y, 0.0])
+            self.initial_pos = np.array(initial_pos)
+
         for i, robot in enumerate(env.robots):
             env.land(robot, self.initial_pos[i], self.initial_orn[i])
 
