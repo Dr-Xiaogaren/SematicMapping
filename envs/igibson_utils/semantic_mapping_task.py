@@ -15,6 +15,11 @@ from envs.semantic_utils.semantic_prediction import SemanticPredMaskRCNN
 from collections import OrderedDict
 from envs.utils.semantic_utils import preprocess_obs
 from envs.utils.pose import get_diff_pose
+from utils.model import get_grid
+import torch.nn as nn
+from torch.nn import functional as F
+
+
 class SemanticMappingTask(BaseTask):
     """
     MappingTask
@@ -169,14 +174,14 @@ class SemanticMappingTask(BaseTask):
                 y = (float(index_travelable[0][choose])-grid_length//2)*travel_map_revolution
                 x = (float(index_travelable[1][choose])-grid_length//2)*travel_map_revolution
                 min_distance = min([np.linalg.norm(np.array([x, y, 0.0])-loc) for loc in initial_pos]) \
-                    if len(initial_pos) != 0 else 0.5
+                    if len(initial_pos) != 0 else self.args.min_initial_distance
                 while not (env.test_valid_position(env.robots[i], np.array([x, y, 0.0])) and
-                           (0.5 <= min_distance <= 5.0)):
+                           (self.args.min_initial_distance <= min_distance <= self.args.max_initial_distance)):
                     choose = random.randrange(0, index_travelable[0].shape[0])
                     y = (float(index_travelable[0][choose])-grid_length//2) * travel_map_revolution
                     x = (float(index_travelable[1][choose]) - grid_length // 2) * travel_map_revolution
                     min_distance = min([np.linalg.norm(np.array([x, y, 0.0]) - loc) for loc in initial_pos]) \
-                        if len(initial_pos) != 0 else 0.5
+                        if len(initial_pos) != 0 else self.args.min_initial_distance
                 initial_pos.append([x, y, 0.0])
             self.initial_pos = np.array(initial_pos)
 
@@ -313,3 +318,28 @@ class SemanticMappingTask(BaseTask):
         """
         new_robot_pos = [robot.get_position()[:2] for robot in env.robots]
         self.robot_pos = new_robot_pos
+
+    def get_merged_map(self):
+        bs, c, h, w = self.local_map.size()[0], self.local_map.size()[1], \
+                      self.local_map.size()[2], self.local_map.size()[3]
+        global_map_size = self.map_size
+        # add all the robot's local map to the center of global map
+        global_map = torch.zeros(bs, c, global_map_size, global_map_size).to(self.device)
+        x1 = int(global_map_size//2 - h//2)
+        x2 = int(x1 + h)
+        y1 = int(global_map_size//2 - w/2)
+        y2 = int(y1 + w)
+        global_map[:, :, x1:x2, y1:y2] = self.local_map
+
+        st_pose = self.poses.clone().detach()
+        st_pose[:, :2] += (global_map_size//2)*self.args.map_resolution/100
+        # offset to the local map center (proportion)
+        st_pose[:, :2] = - (st_pose[:, :2] * 100.0 / self.args.map_resolution - global_map_size/2) / (global_map_size/2)
+        st_pose[:, 2] = 0.
+        rot_mat, trans_mat = get_grid(st_pose, global_map.size(), self.device)
+        rotated = F.grid_sample(global_map, rot_mat, align_corners=True)
+        translated = F.grid_sample(rotated, trans_mat, align_corners=True)
+
+        map_merged, _ = torch.max(translated, 0)
+
+        return map_merged.cpu().numpy()

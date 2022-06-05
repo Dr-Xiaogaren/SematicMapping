@@ -36,14 +36,34 @@ def render(observation, robot_id):
     plt.pause(0.5)
 
 
+def render_global(global_map):
+    plt.ion()
+    color_low = 0.07
+    obstacle = np.where(global_map[0, :, :] > 0.5, 1, 0.0)
+    semantic_map = global_map[4:, :, :]
+    semantic_map = np.concatenate([np.zeros((1, semantic_map.shape[-1], semantic_map.shape[-1])), semantic_map])
+    semantic_map = semantic_map.argmax(0)
+    plot_map = obstacle
+    for class_id in range(1, 17):
+        index = np.where(semantic_map == class_id)
+        for r, c in zip(index[0].tolist(), index[1].tolist()):
+            plot_map[r][c] = color_low + 0.05 * class_id
+
+    axsimg = plt.imshow(plot_map, cmap='tab20')
+    plt.draw()
+    plt.pause(0.5)
+
+
+
+
 
 
 def main():
     args = get_args()
     env_config_file = "configs/multi_robot_semantic_mapping.yaml"
     env_config = parse_config(env_config_file)
-    render_mode = "gui_non_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
-    env = MultiRobotEnv(args=args, config_file=env_config_file, mode=render_mode, use_pb_gui=True, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
+    render_mode = "gui_interactive" #  headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    env = MultiRobotEnv(args=args, config_file=env_config_file, mode=render_mode, use_pb_gui=False, action_timestep=1.0 / 10.0, physics_timestep=1.0 / 40.0)
     for ep in range(10):
         env.reset()
         floor = env.scene.floor_map
@@ -64,7 +84,9 @@ def main():
             map = state["task_obs"]
             semantic_map = map[2, 4:, :, :].argmax(0)
             # plot(map[0][0])
-            render(map, 0)
+            # render(map, 0)
+            global_map = env.task.get_merged_map()
+            render_global(global_map)
         # plt.close(fig)
 
 
