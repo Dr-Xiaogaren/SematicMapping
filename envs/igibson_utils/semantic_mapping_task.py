@@ -343,3 +343,11 @@ class SemanticMappingTask(BaseTask):
         map_merged, _ = torch.max(translated, 0)
 
         return map_merged.cpu().numpy()
+
+    # Todo Finish the bottomed planning
+    def plan_to_goal(self, robot, goal):
+
+        velocity = 0
+        action = velocity
+
+        return action
