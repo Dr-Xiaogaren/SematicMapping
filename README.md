@@ -1,155 +1,37 @@
-# Object Goal Navigation using Goal-Oriented Semantic Exploration
-This is a PyTorch implementation of the NeurIPS-20 paper:
-
+# 多机器人语义建图工作
+该工作主要是基于NIPS2020的文章
 [Object Goal Navigation using Goal-Oriented Semantic Exploration](https://arxiv.org/pdf/2007.00643.pdf)<br />
-Devendra Singh Chaplot, Dhiraj Gandhi, Abhinav Gupta, Ruslan Salakhutdinov<br />
-Carnegie Mellon University, Facebook AI Research
-
-Winner of the [CVPR 2020 Habitat ObjectNav Challenge](https://aihabitat.org/challenge/2020/).
-
-Project Website: https://devendrachaplot.github.io/projects/semantic-exploration
-
-![example](./docs/example.gif)
-
-### Overview:
-The Goal-Oriented Semantic Exploration (SemExp) model consists of three modules: a Semantic Mapping Module, a Goal-Oriented Semantic Policy, and a deterministic Local Policy. 
-As shown below, the Semantic Mapping model builds a semantic map over time. The Goal-Oriented Semantic Policy selects a long-term goal based on the semantic
-map to reach the given object goal efficiently. A deterministic local policy based on analytical planners is used to take low-level navigation actions to reach the long-term goal.
-
-![overview](./docs/overview.jpg)
-
-### This repository contains:
-- Episode train and test datasets for [Object Goal Navigation](https://arxiv.org/pdf/2007.00643.pdf) task for the Gibson dataset in the Habitat Simulator.
-- The code to train and evaluate the Semantic Exploration (SemExp) model on the Object Goal Navigation task.
-- Pretrained SemExp model.
+进行的改进工作，采用了他的Mapping模块，并将其扩展至多机器人领域以及iGibson仿真环境中。
 
 ## Installing Dependencies
-- We use earlier versions of [habitat-sim](https://github.com/facebookresearch/habitat-sim) and [habitat-lab](https://github.com/facebookresearch/habitat-lab) as specified below:
-
-Installing habitat-sim:
+- 安装多机版本的iGibson:[iGibson-MR](https://github.com/vsislab/iGibson-MR)
+- 安装pytorch
 ```
-git clone https://github.com/facebookresearch/habitat-sim.git
-cd habitat-sim; git checkout tags/v0.1.5; 
-pip install -r requirements.txt; 
-python setup.py install --headless
-python setup.py install # (for Mac OS)
+conda install pytorch==1.6.0 torchvision==0.7.0 cudatoolkit=10.2 
 ```
 
-Installing habitat-lab:
+- 安装 [detectron2](https://github.com/facebookresearch/detectron2/) 用于语义分割模块:
 ```
-git clone https://github.com/facebookresearch/habitat-lab.git
-cd habitat-lab; git checkout tags/v0.1.5; 
-pip install -e .
+python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.6/index.html 
 ```
-Check habitat installation by running `python examples/benchmark.py` in the habitat-lab folder.
-
-- Install [pytorch](https://pytorch.org/) according to your system configuration. The code is tested on pytorch v1.6.0 and cudatoolkit v10.2. If you are using conda:
+- 安装项目需要的其余依赖（此处用pip可能会出问题，建议用conda）
 ```
-conda install pytorch==1.6.0 torchvision==0.7.0 cudatoolkit=10.2 #(Linux with GPU)
-conda install pytorch==1.6.0 torchvision==0.7.0 -c pytorch #(Mac OS)
+conda install -r requirements.txt
 ```
 
-- Install [detectron2](https://github.com/facebookresearch/detectron2/) according to your system configuration. If you are using conda:
-```
-python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.6/index.html #(Linux with GPU)
-CC=clang CXX=clang++ ARCHFLAGS="-arch x86_64" python -m pip install 'git+https://github.com/facebookresearch/detectron2.git' #(Mac OS)
-```
+## 一些接口的说明
+目前已经完成了Mapping模块的搭建。
+关于环境部分主要集中在`/env`目录下。
+其中`multi_robot_mapping.py`即为对于iGibson核心类`iGibsonEnv`的继承，此处无需更多修改。
+目录`/semantic_utils`下存放的两个函数，分别是语义分割模块和建图模块。
 
-### Docker and Singularity images:
-We provide experimental [docker](https://www.docker.com/) and [singularity](https://sylabs.io/) images with all the dependencies installed, see [Docker Instructions](./docs/DOCKER_INSTRUCTIONS.md).
+### Task函数
+核心代码在`igibson_utils/semantic_mapping_task.py`，该模块是task函数，与任务有关的变量都存储于task类下。
+最终得到的语义地图就是`self.full_map`和`self.local_map`两者都是以机器人起始位置为中心的格点地图（后者是前者的一部分），大小为机器人数目* 20 * 地图宽度 * 地图高度。
+最终的local policy的模块也会集成在该类中。
 
+## 运行与测试
+根目录下的`test.py`。
+目前简单写了一个test函数用于测试和调试，在该函数中可以可视化机器人的第一视角以及传回的地图。
+运行参数见`arguments.py`中，可能会有多余的参数。
 
-## Setup
-Clone the repository and install other requirements:
-```
-git clone https://github.com/devendrachaplot/Object-Goal-Navigation/
-cd Object-Goal-Navigation/;
-pip install -r requirements.txt
-```
-
-### Downloading scene dataset
-- Download the Gibson dataset using the instructions here: https://github.com/facebookresearch/habitat-lab#scenes-datasets (download the 11GB file `gibson_habitat_trainval.zip`)
-- Move the Gibson scene dataset or create a symlink at `data/scene_datasets/gibson_semantic`. 
-
-### Downloading episode dataset
-- Download the episode dataset:
-```
-wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=1tslnZAkH8m3V5nP8pbtBmaR2XEfr8Rau' -O objectnav_gibson_v1.1.zip
-```
-- Unzip the dataset into `data/datasets/objectnav/gibson/v1.1/`
-
-### Setting up datasets
-The code requires the datasets in a `data` folder in the following format (same as habitat-lab):
-```
-Object-Goal-Navigation/
-  data/
-    scene_datasets/
-      gibson_semantic/
-        Adrian.glb
-        Adrian.navmesh
-        ...
-    datasets/
-      objectnav/
-        gibson/
-          v1.1/
-            train/
-            val/
-```
-
-
-### Test setup
-To verify that the data is setup correctly, run:
-```
-python test.py --agent random -n1 --num_eval_episodes 1 --auto_gpu_config 0
-```
-
-## Usage
-
-### Training:
-For training the SemExp model on the Object Goal Navigation task:
-```
-python main.py
-```
-
-### Downloading pre-trained models
-```
-mkdir pretrained_models;
-wget --no-check-certificate 'https://drive.google.com/uc?export=download&id=171ZA7XNu5vi3XLpuKs8DuGGZrYyuSjL0' -O pretrained_models/sem_exp.pth
-```
-
-### For evaluation: 
-For evaluating the pre-trained model:
-```
-python main.py --split val --eval 1 --load pretrained_models/sem_exp.pth
-```
-
-For visualizing the agent observations and predicted semantic map, add `-v 1` as an argument to the above command.
-
-The pre-trained model should get 0.657 Success, 0.339 SPL and 1.474 DTG.
-
-For more detailed instructions, see [INSTRUCTIONS](./docs/INSTRUCTIONS.md).
-
-
-## Cite as
->Chaplot, D.S., Gandhi, D., Gupta, A. and Salakhutdinov, R., 2020. Object Goal Navigation using Goal-Oriented Semantic Exploration. In Neural Information Processing Systems (NeurIPS-20). ([PDF](https://arxiv.org/pdf/2007.00643.pdf))
-
-### Bibtex:
-```
-@inproceedings{chaplot2020object,
-  title={Object Goal Navigation using Goal-Oriented Semantic Exploration},
-  author={Chaplot, Devendra Singh and Gandhi, Dhiraj and
-            Gupta, Abhinav and Salakhutdinov, Ruslan},
-  booktitle={In Neural Information Processing Systems (NeurIPS)},
-  year={2020}
-  }
-```
-
-## Related Projects
-- This project builds on the [Active Neural SLAM](https://devendrachaplot.github.io/projects/Neural-SLAM) paper. The code and pretrained models for the Active Neural SLAM system are available at:
-https://github.com/devendrachaplot/Neural-SLAM.
-- The Semantic Mapping module is similar to the one used in [Semantic Curiosity](https://devendrachaplot.github.io/projects/SemanticCuriosity).
-
-## Acknowledgements
-This repository uses [Habitat Lab](https://github.com/facebookresearch/habitat-lab) implementation for running the RL environment.
-The implementation of PPO is borrowed from [ikostrikov/pytorch-a2c-ppo-acktr-gail](https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/). 
-The Mask-RCNN implementation is based on the [detectron2](https://github.com/facebookresearch/detectron2/) repository. We would also like to thank Shubham Tulsiani and Saurabh Gupta for their help in implementing some parts of the code.
