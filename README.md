@@ -14,7 +14,7 @@ conda install pytorch==1.6.0 torchvision==0.7.0 cudatoolkit=10.2
 ```
 python -m pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu102/torch1.6/index.html 
 ```
-- 安装项目需要的其余依赖（此处用pip可能会出问题，建议用conda）
+- 安装项目需要的其余依赖（此处用pip可能会出问题，建议用conda），如果fmm装不上的话可以不装
 ```
 conda install -r requirements.txt
 ```
