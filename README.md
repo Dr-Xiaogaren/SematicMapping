@@ -4,7 +4,7 @@
 进行的改进工作，采用了他的Mapping模块，并将其扩展至多机器人领域以及iGibson仿真环境中。
 
 ## Installing Dependencies
-- 安装多机版本的iGibson:[iGibson-MR](https://github.com/vsislab/iGibson-MR)
+- 安装多机版本的iGibson:[iGibson-MR](https://github.com/vsislab/iGibson-MR)，留意不仅需要gibson数据集，还需要下载igibson的数据集
 - 安装pytorch
 ```
 conda install pytorch==1.6.0 torchvision==0.7.0 cudatoolkit=10.2 
