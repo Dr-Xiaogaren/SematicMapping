@@ -10,8 +10,8 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
     parser.add_argument('--auto_gpu_config', type=int, default=1)
-    parser.add_argument('--total_num_scenes', type=str, default="1")
-    parser.add_argument('-n', '--num_processes', type=int, default=1,
+    parser.add_argument('--total_num_scenes', type=str, default="4")
+    parser.add_argument('-n', '--num_processes', type=int, default=4,
                         help="""how many training processes to use (default:5)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus""")
@@ -26,6 +26,8 @@ def get_args():
     parser.add_argument('--num_train_episodes', type=int, default=10000,
                         help="""number of train episodes per scene
                                 before loading the next scene""")
+    parser.add_argument('--num_episodes', type=int, default=1000000,
+                        help='number of training episodes (default: 1000000)')
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument("--sim_gpu_id", type=int, default=0,
@@ -39,6 +41,31 @@ def get_args():
                                     2: Render the observation with semantic
                                        predictions and the predicted semantic map
                                     (default: 0)""")
+    parser.add_argument('--train_global', type=int, default=1,
+                        help="""0: Do not train the Global Policy
+                                        1: Train the Global Policy (default: 1)""")
+    parser.add_argument('--train_local', type=int, default=1,
+                        help="""0: Do not train the Local Policy
+                                        1: Train the Local Policy (default: 1)""")
+
+    # Logging, loading models, visualization
+    parser.add_argument('--log_interval', type=int, default=10,
+                        help="""log interval, one log per n updates
+                                    (default: 10) """)
+    parser.add_argument('--save_interval', type=int, default=1,
+                        help="""save interval""")
+    parser.add_argument('-d', '--dump_location', type=str, default="./tmp/",
+                        help='path to dump models and log (default: ./tmp/)')
+    parser.add_argument('--exp_name', type=str, default="exp1",
+                        help='experiment name (default: exp1)')
+    parser.add_argument('--save_periodic', type=int, default=500000,
+                        help='Model save frequency in number of updates')
+    parser.add_argument('--load_global', type=str, default="0",
+                        help="""model path to load,
+                                    0 to not reload (default: 0)""")
+    parser.add_argument('--load_local', type=str, default="0",
+                        help="""model path to load,
+                                    0 to not reload (default: 0)""")
 
 
     # Environment, dataset and episode specifications
@@ -53,6 +80,55 @@ def get_args():
     parser.add_argument('--num_sem_categories', type=float, default=16)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
+
+    ## Global Policy RL PPO Hyperparameters
+    parser.add_argument('--global_lr', type=float, default=2.5e-5,
+                        help='global learning rate (default: 2.5e-5)')
+    parser.add_argument('--global_hidden_size', type=int, default=256,
+                        help='local_hidden_size')
+    parser.add_argument('--eps', type=float, default=1e-5,
+                        help='RL Optimizer epsilon (default: 1e-5)')
+    parser.add_argument('--alpha', type=float, default=0.99,
+                        help='RL Optimizer alpha (default: 0.99)')
+    parser.add_argument('--gamma', type=float, default=0.99,
+                        help='discount factor for rewards (default: 0.99)')
+    parser.add_argument('--use_gae', action='store_true', default=False,
+                        help='use generalized advantage estimation')
+    parser.add_argument('--tau', type=float, default=0.95,
+                        help='gae parameter (default: 0.95)')
+    parser.add_argument('--entropy_coef', type=float, default=0.001,
+                        help='entropy term coefficient (default: 0.01)')
+    parser.add_argument('--value_loss_coef', type=float, default=0.5,
+                        help='value loss coefficient (default: 0.5)')
+    parser.add_argument('--max_grad_norm', type=float, default=0.5,
+                        help='max norm of gradients (default: 0.5)')
+    parser.add_argument('--num_global_steps', type=int, default=40,
+                        help='number of forward steps in A2C (default: 5)')
+    parser.add_argument('--ppo_epoch', type=int, default=4,
+                        help='number of ppo epochs (default: 4)')
+    parser.add_argument('--num_mini_batch', type=str, default="auto",
+                        help='number of batches for ppo (default: 32)')
+    parser.add_argument('--clip_param', type=float, default=0.2,
+                        help='ppo clip parameter (default: 0.2)')
+    parser.add_argument('--use_recurrent_global', type=int, default=0,
+                        help='use a recurrent global policy')
+
+    # Local Policy
+    parser.add_argument('--local_optimizer', type=str,
+                        default='adam,lr=0.0001')
+    parser.add_argument('--num_local_steps', type=int, default=25,
+                        help="""Number of steps the local can
+                                perform between each global instruction""")
+    parser.add_argument('--local_hidden_size', type=int, default=512,
+                        help='local_hidden_size')
+    parser.add_argument('--short_goal_dist', type=int, default=1,
+                        help="""Maximum distance between the agent
+                                    and the short term goal""")
+    parser.add_argument('--local_policy_update_freq', type=int, default=5)
+    parser.add_argument('--use_recurrent_local', type=int, default=1,
+                        help='use a recurrent local policy')
+    parser.add_argument('--use_deterministic_local', type=int, default=0,
+                        help="use classical deterministic local policy")
 
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
@@ -108,9 +184,9 @@ def get_args():
                     """Insufficient GPU memory for evaluation"""
 
             if num_gpus == 1:
-                args.num_processes_on_first_gpu = 1
+                args.num_processes_on_first_gpu = num_processes_per_gpu
                 args.num_processes_per_gpu = 0
-                args.num_processes = 1
+                args.num_processes = num_processes_per_gpu
                 assert args.num_processes > 0, "Insufficient GPU memory"
             else:
                 num_threads = num_processes_per_gpu * (num_gpus - 1) \

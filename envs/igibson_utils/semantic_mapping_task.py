@@ -307,7 +307,13 @@ class SemanticMappingTask(BaseTask):
                 self.local_pose[e] = self.full_pose[e] - \
                                 torch.from_numpy(self.origins[e]).to(self.device).float()
 
-        task_obs = self.local_map.cpu().numpy()
+        # task_obs = self.local_map.cpu().numpy()
+        # task_obs = {}
+        # only take out the obstacle part
+        local_map_ob = self.local_map.cpu().numpy()[:, 0:4, :, :]
+        full_map_ob_torch = nn.MaxPool2d(self.args.global_downscaling)(self.full_map)
+        full_map_ob = full_map_ob_torch.cpu().numpy()[:, 0:4, :, :]
+        task_obs = np.concatenate((local_map_ob, full_map_ob), axis=1)
         return task_obs
 
     def step(self, env):
@@ -351,3 +357,11 @@ class SemanticMappingTask(BaseTask):
         action = velocity
 
         return action
+
+    def get_obs_info(self, info={}):
+        global_orientation = (self.local_pose[:, 2] + 180.0) / 5.
+        global_orientation_np = global_orientation.cpu().numpy()
+        global_orientation_np = global_orientation_np.astype(int)
+        info['global_orientation'] = global_orientation_np
+
+        return info

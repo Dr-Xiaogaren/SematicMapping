@@ -102,6 +102,7 @@ class MultiRobotEnv(iGibsonEnv):
                 break
         state = self.get_state()
         info = {}
+        info = self.task.get_obs_info(info)
         self.task.step(self)
         reward, info = self.task.get_reward(self, collision_links, action, info)
         done, info = self.task.get_termination(self, collision_links, action, info)
@@ -109,6 +110,22 @@ class MultiRobotEnv(iGibsonEnv):
 
         if done and self.automatic_reset:
             info["last_observation"] = state
-            state = self.reset()
+            state, info = self.reset()
 
         return state, reward, done, info
+
+    def reset(self):
+        """
+        Reset episode.
+        """
+        self.randomize_domain()
+        # Move robot away from the scene.
+        for robot in self.robots:
+            robot.set_position([100.0, 100.0, 100.0])
+        self.task.reset(self)
+        self.simulator.sync(force_sync=True)
+        state = self.get_state()
+        info = {}
+        info = self.task.get_obs_info(info)
+        self.reset_variables()
+        return state, info
