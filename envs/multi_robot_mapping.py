@@ -54,8 +54,8 @@ class MultiRobotEnv(iGibsonEnv):
 
     def load_task_setup(self):
         """
-                Load task setup.
-                """
+        Load task setup.
+        """
         self.initial_pos_z_offset = self.config.get("initial_pos_z_offset", 0.1)
         # s = 0.5 * G * (t ** 2)
         drop_distance = 0.5 * 9.8 * (self.action_timestep ** 2)

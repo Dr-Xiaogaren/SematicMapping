@@ -116,7 +116,7 @@ def get_args():
     # Local Policy
     parser.add_argument('--local_optimizer', type=str,
                         default='adam,lr=0.0001')
-    parser.add_argument('--num_local_steps', type=int, default=25,
+    parser.add_argument('--num_local_steps', type=int, default=20,
                         help="""Number of steps the local can
                                 perform between each global instruction""")
     parser.add_argument('--local_hidden_size', type=int, default=512,

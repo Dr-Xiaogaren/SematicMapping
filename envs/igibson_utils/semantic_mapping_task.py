@@ -18,7 +18,7 @@ from envs.utils.pose import get_diff_pose
 from utils.model import get_grid
 import torch.nn as nn
 from torch.nn import functional as F
-
+from .reward_functions import ExploreReward
 
 class SemanticMappingTask(BaseTask):
     """
@@ -35,6 +35,8 @@ class SemanticMappingTask(BaseTask):
         ]
         self.reward_functions = [
             CollisionReward(self.config),
+            ExploreReward(self.config)
+
         ]
 
         self.initial_pos = np.array(self.config.get("initial_pos"))
@@ -62,6 +64,7 @@ class SemanticMappingTask(BaseTask):
         # Initializing full and local map
         self.full_map = torch.zeros(env.n_robots, self.nc, self.full_w, self.full_h).float().to(self.device)
         self.local_map = torch.zeros(env.n_robots, self.nc, self.local_w, self.local_h).float().to(self.device)
+        self.last_full_map = torch.zeros(env.n_robots, self.nc, self.full_w, self.full_h).float().to(self.device).cpu().numpy()
 
         # Initial full and local pose
         self.full_pose = torch.zeros(env.n_robots, 3).float().to(self.device)
@@ -191,6 +194,7 @@ class SemanticMappingTask(BaseTask):
     def reset_variables(self, env):
         self.init_map_and_pose(env)
         self.robot_pos = [self.initial_pos[i, 0:2] for i in range(env.n_robots)]
+        self.last_full_map = torch.zeros(env.n_robots, self.nc, self.full_w, self.full_h).float().to(self.device).cpu().numpy()
 
     def get_termination(self, env, collision_links=[], action=None, info={}):
         """
@@ -247,6 +251,8 @@ class SemanticMappingTask(BaseTask):
         :return: task-specific observation
         """
 
+
+
         # pick up RGBD observation
         obs = OrderedDict()
         vision_obs = env.sensors["vision"].get_obs(env)
@@ -280,6 +286,7 @@ class SemanticMappingTask(BaseTask):
             self.local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
 
         if env.current_step % self.args.global_num_step == 0:
+            self.last_full_map = self.full_map.cpu().numpy()
             # For every global step, update the full and local maps
             for e in range(self.n_robots):
                 self.full_map[e, :, self.lmb[e, 0]:self.lmb[e, 1], self.lmb[e, 2]:self.lmb[e, 3]] = \
