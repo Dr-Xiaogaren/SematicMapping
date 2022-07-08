@@ -140,6 +140,8 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
+    parser.add_argument('--obstacle_boundary', type=int, default=5)
+    parser.add_argument('-ot', '--obs_threshold', type=float, default=1)
     parser.add_argument('--global_num_step', type=int, default=20,
                         help="Number of local steps in a global step, "
                              "or the update frequency of full map,nust be the factor of num_local_steps")
@@ -148,12 +150,13 @@ def get_args():
                         help="Minimum distance among random initial robot location")
     parser.add_argument('--max_initial_distance', type=float, default=5.0,
                         help="Maximum distance among random initial robot location")
+    parser.add_argument('--goals_size', type=int, default=2)
 
     # parse arguments
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-
+    assert args.short_goal_dist >= 1, "args.short_goal_dist >= 1"
     if args.cuda:
         if args.auto_gpu_config:
             num_gpus = torch.cuda.device_count()
@@ -210,6 +213,5 @@ def get_args():
                 args.num_processes_per_gpu))
     else:
         args.sem_gpu_id = -2
-
 
     return args

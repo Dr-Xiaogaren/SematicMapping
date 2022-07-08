@@ -1,4 +1,7 @@
 import random
+import math
+import os
+import sys
 
 import numpy as np
 import pybullet as p
@@ -19,6 +22,9 @@ from utils.model import get_grid
 import torch.nn as nn
 from torch.nn import functional as F
 from .reward_functions import ExploreReward
+import envs.utils.pose as pu
+from envs.utils.fmm_planner import FMMPlanner
+import skimage.morphology
 
 class SemanticMappingTask(BaseTask):
     """
@@ -76,6 +82,11 @@ class SemanticMappingTask(BaseTask):
         # Local Map Boundaries
         self.lmb = np.zeros((env.n_robots, 4)).astype(int)
 
+        # Planner pose inputs has 7 dimensions
+        # 1-3 store continuous global agent location
+        # 4-7 store local map boundaries
+        self.planner_pose_inputs = np.zeros((self.n_robots, 7))
+
         # initial the variable
         self.init_map_and_pose(env)
 
@@ -86,6 +97,10 @@ class SemanticMappingTask(BaseTask):
             self.args.sem_gpu_id = 0
         self.sem_pred = SemanticPredMaskRCNN(self.args)
 
+        # Planning
+        self.selem = skimage.morphology.disk(self.args.obstacle_boundary /
+                                             self.args.map_resolution)
+        self.dt = 10  # rotation degree
 
     def get_local_map_boundaries(self, agent_loc, local_sizes, full_sizes):
         loc_r, loc_c = agent_loc
@@ -115,7 +130,7 @@ class SemanticMappingTask(BaseTask):
         self.full_pose[:, :2] = self.args.map_size_cm / 100.0 / 2.0  # center of the grid map (m)
 
         locs = self.full_pose.cpu().numpy()
-
+        self.planner_pose_inputs[:, :3] = locs
         for e in range(self.n_robots):
             r, c = locs[e, 1], locs[e, 0]
             loc_r, loc_c = [int(r * 100.0 / self.args.map_resolution),
@@ -128,6 +143,7 @@ class SemanticMappingTask(BaseTask):
                                               (self.local_w, self.local_h),
                                               (self.full_w, self.full_h))
 
+            self.planner_pose_inputs[e, 3:] = self.lmb[e]
             # the absolute coordinate of boundary point
             self.origins[e] = [self.lmb[e][2] * self.args.map_resolution / 100.0,
                                self.lmb[e][0] * self.args.map_resolution / 100.0, 0.]
@@ -147,7 +163,6 @@ class SemanticMappingTask(BaseTask):
                 self.device)
             self.poses[:, -1] = orientation[:, 2]
             self.last_pose = self.poses
-
 
     def reset_scene(self, env):
         """
@@ -251,8 +266,6 @@ class SemanticMappingTask(BaseTask):
         :return: task-specific observation
         """
 
-
-
         # pick up RGBD observation
         obs = OrderedDict()
         vision_obs = env.sensors["vision"].get_obs(env)
@@ -279,6 +292,8 @@ class SemanticMappingTask(BaseTask):
         self.local_map[:, 2, :, :].fill_(0.)  # Resetting current location chan
         # locate the location of robots
         locs = self.local_pose.cpu().numpy()
+        self.planner_pose_inputs[:, :3] = locs + self.origins
+
         for e in range(self.n_robots):
             r, c = locs[e, 1], locs[e, 0]
             loc_r, loc_c = [int(r * 100.0 / self.args.map_resolution),
@@ -304,7 +319,7 @@ class SemanticMappingTask(BaseTask):
                 self.lmb[e] = self.get_local_map_boundaries((loc_r, loc_c),
                                                   (self.local_w, self.local_h),
                                                   (self.full_w, self.full_h))
-
+                self.planner_pose_inputs[e, 3:] = self.lmb[e]
                 self.origins[e] = [self.lmb[e][2] * self.args.map_resolution / 100.0,
                               self.lmb[e][0] * self.args.map_resolution / 100.0, 0.]
 
@@ -372,3 +387,241 @@ class SemanticMappingTask(BaseTask):
         info['global_orientation'] = global_orientation_np
 
         return info
+
+
+    def get_short_term_goal(self, goal_inputs):
+        inputs = [{} for e in range(self.n_robots)]
+        for e, p_input in enumerate(inputs):
+            p_input['goal'] = goal_inputs[e]
+            p_input['map_pred'] = self.local_map.detach().cpu().numpy()[e, 0, :, :]
+            p_input['exp_pred'] = self.local_map.detach().cpu().numpy()[e, 1, :, :]
+            p_input['pose_pred'] = self.planner_pose_inputs[e]
+            p_input['explorable_map'] = self.full_map.detach().cpu().numpy()[e, 0, :, :]
+
+        outputs = []
+        for e, p_input in enumerate(inputs):
+            outputs.append(self.get_short_term_goal_for_single_robot(p_input))
+
+        return outputs
+
+    def get_short_term_goal_for_single_robot(self, inputs):
+        args = self.args
+
+        # Get Map prediction
+        map_pred = inputs['map_pred']
+        exp_pred = inputs['exp_pred']
+
+        grid = np.rint(map_pred)
+        explored = np.rint(exp_pred)
+
+        # Get pose prediction and global policy planning window
+        start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
+        gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
+        planning_window = [gx1, gx2, gy1, gy2]
+
+        # Get curr loc
+        r, c = start_y, start_x
+        start = [int(r * 100.0/args.map_resolution - gx1),
+                 int(c * 100.0/args.map_resolution - gy1)]
+        start = pu.threshold_poses(start, grid.shape)
+
+        # Get goal
+        goal = inputs['goal']
+        goal = pu.threshold_poses(goal, grid.shape)
+
+
+        # Get intrinsic reward for global policy
+        # Negative reward for exploring explored areas i.e.
+        # for choosing explored cell as long-term goal
+        self.extrinsic_rew = -pu.get_l2_distance(10, goal[0], 10, goal[1])
+        self.intrinsic_rew = -exp_pred[goal[0], goal[1]]
+
+        # Get short-term goal
+        stg = self._get_stg(grid, explored, start, np.copy(goal), planning_window)
+
+        # Find GT action
+        if self.args.eval or not self.args.train_local:
+            gt_action = 0
+        else:
+            gt_action = self._get_gt_action(np.rint(inputs['explorable_map']), start,
+                                            [int(stg[0]), int(stg[1])],
+                                            planning_window, start_o)
+
+        (stg_x, stg_y) = stg
+        relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
+        relative_dist = relative_dist*5./100.
+        angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
+                                                stg_y - start[1]))
+        angle_agent = (start_o)%360.0
+        if angle_agent > 180:
+            angle_agent -= 360
+
+        relative_angle = (angle_agent - angle_st_goal)%360.0
+        if relative_angle > 180:
+            relative_angle -= 360
+
+        def discretize(dist):
+            dist_limits = [0.25, 3, 10]
+            dist_bin_size = [0.05, 0.25, 1.]
+            if dist < dist_limits[0]:
+                ddist = int(dist/dist_bin_size[0])
+            elif dist < dist_limits[1]:
+                ddist = int((dist - dist_limits[0])/dist_bin_size[1]) + \
+                    int(dist_limits[0]/dist_bin_size[0])
+            elif dist < dist_limits[2]:
+                ddist = int((dist - dist_limits[1])/dist_bin_size[2]) + \
+                    int(dist_limits[0]/dist_bin_size[0]) + \
+                    int((dist_limits[1] - dist_limits[0])/dist_bin_size[1])
+            else:
+                ddist = int(dist_limits[0]/dist_bin_size[0]) + \
+                    int((dist_limits[1] - dist_limits[0])/dist_bin_size[1]) + \
+                    int((dist_limits[2] - dist_limits[1])/dist_bin_size[2])
+            return ddist
+
+        output = np.zeros((args.goals_size + 1))
+
+        output[0] = int((relative_angle%360.)/5.)
+        output[1] = discretize(relative_dist)
+        output[2] = gt_action
+
+
+        return output
+
+    def _get_stg(self, grid, explored, start, goal, planning_window):
+
+        [gx1, gx2, gy1, gy2] = planning_window
+
+        x1 = min(start[0], goal[0])
+        x2 = max(start[0], goal[0])
+        y1 = min(start[1], goal[1])
+        y2 = max(start[1], goal[1])
+        dist = pu.get_l2_distance(goal[0], start[0], goal[1], start[1])
+        buf = max(20., dist)
+        x1 = max(1, int(x1 - buf))
+        x2 = min(grid.shape[0]-1, int(x2 + buf))
+        y1 = max(1, int(y1 - buf))
+        y2 = min(grid.shape[1]-1, int(y2 + buf))
+
+        rows = explored.sum(1)
+        rows[rows>0] = 1
+        ex1 = np.argmax(rows)
+        ex2 = len(rows) - np.argmax(np.flip(rows))
+
+        cols = explored.sum(0)
+        cols[cols>0] = 1
+        ey1 = np.argmax(cols)
+        ey2 = len(cols) - np.argmax(np.flip(cols))
+
+        ex1 = min(int(start[0]) - 2, ex1)
+        ex2 = max(int(start[0]) + 2, ex2)
+        ey1 = min(int(start[1]) - 2, ey1)
+        ey2 = max(int(start[1]) + 2, ey2)
+
+        x1 = max(x1, ex1)
+        x2 = min(x2, ex2)
+        y1 = max(y1, ey1)
+        y2 = min(y2, ey2)
+
+        traversible = skimage.morphology.binary_dilation(
+                        grid[x1:x2, y1:y2],
+                        self.selem) != True
+
+        traversible[int(start[0]-x1)-1:int(start[0]-x1)+2,
+                    int(start[1]-y1)-1:int(start[1]-y1)+2] = 1
+
+        if goal[0]-2 > x1 and goal[0]+3 < x2\
+            and goal[1]-2 > y1 and goal[1]+3 < y2:
+            traversible[int(goal[0]-x1)-2:int(goal[0]-x1)+3,
+                    int(goal[1]-y1)-2:int(goal[1]-y1)+3] = 1
+        else:
+            goal[0] = min(max(x1, goal[0]), x2)
+            goal[1] = min(max(y1, goal[1]), y2)
+
+        def add_boundary(mat):
+            h, w = mat.shape
+            new_mat = np.ones((h+2,w+2))
+            new_mat[1:h+1,1:w+1] = mat
+            return new_mat
+
+        traversible = add_boundary(traversible)
+
+        planner = FMMPlanner(traversible, 360//self.dt)
+
+        reachable = planner.set_goal([goal[1]-y1+1, goal[0]-x1+1])
+
+        stg_x, stg_y = start[0] - x1 + 1, start[1] - y1 + 1
+        for i in range(self.args.short_goal_dist):
+            stg_x, stg_y, replan = planner.get_short_term_goal([stg_x, stg_y])
+        if replan:
+            stg_x, stg_y = start[0], start[1]
+        else:
+            stg_x, stg_y = stg_x + x1 - 1, stg_y + y1 - 1
+
+        return (stg_x, stg_y)
+
+
+    def _get_gt_action(self, grid, start, goal, planning_window, start_o):
+
+        [gx1, gx2, gy1, gy2] = planning_window
+
+        x1 = min(start[0], goal[0])
+        x2 = max(start[0], goal[0])
+        y1 = min(start[1], goal[1])
+        y2 = max(start[1], goal[1])
+        dist = pu.get_l2_distance(goal[0], start[0], goal[1], start[1])
+        buf = max(5., dist)
+        x1 = max(0, int(x1 - buf))
+        x2 = min(grid.shape[0], int(x2 + buf))
+        y1 = max(0, int(y1 - buf))
+        y2 = min(grid.shape[1], int(y2 + buf))
+
+        path_found = False
+        goal_r = 0
+        while not path_found:
+            traversible = skimage.morphology.binary_dilation(
+                            grid[gx1:gx2, gy1:gy2][x1:x2, y1:y2],
+                            self.selem) != True
+            traversible[int(start[0]-x1)-1:int(start[0]-x1)+2,
+                        int(start[1]-y1)-1:int(start[1]-y1)+2] = 1
+            traversible[int(goal[0]-x1)-goal_r:int(goal[0]-x1)+goal_r+1,
+                        int(goal[1]-y1)-goal_r:int(goal[1]-y1)+goal_r+1] = 1
+            scale = 1
+            planner = FMMPlanner(traversible, 360//self.dt, scale)
+
+            reachable = planner.set_goal([goal[1]-y1, goal[0]-x1])
+
+            stg_x_gt, stg_y_gt = start[0] - x1, start[1] - y1
+            for i in range(1):
+                stg_x_gt, stg_y_gt, replan = \
+                        planner.get_short_term_goal([stg_x_gt, stg_y_gt])
+
+            if replan and buf < 100.:
+                buf = 2*buf
+                x1 = max(0, int(x1 - buf))
+                x2 = min(grid.shape[0], int(x2 + buf))
+                y1 = max(0, int(y1 - buf))
+                y2 = min(grid.shape[1], int(y2 + buf))
+            elif replan and goal_r < 50:
+                goal_r += 1
+            else:
+                path_found = True
+
+        stg_x_gt, stg_y_gt = stg_x_gt + x1, stg_y_gt + y1
+        angle_st_goal = math.degrees(math.atan2(stg_x_gt - start[0],
+                                                stg_y_gt - start[1]))
+        angle_agent = (start_o)%360.0
+        if angle_agent > 180:
+            angle_agent -= 360
+
+        relative_angle = (angle_agent - angle_st_goal)%360.0
+        if relative_angle > 180:
+            relative_angle -= 360
+
+        if relative_angle > 15.:
+            gt_action = 1
+        elif relative_angle < -15.:
+            gt_action = 0
+        else:
+            gt_action = 2
+
+        return gt_action
