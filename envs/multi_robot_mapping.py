@@ -3,6 +3,7 @@ import torch
 from igibson.envs.igibson_env import iGibsonEnv
 from igibson.tasks.dummy_task import DummyTask
 from envs.igibson_utils.semantic_mapping_task import SemanticMappingTask
+import numpy as np
 log = logging.getLogger(__name__)
 
 
@@ -91,15 +92,81 @@ class MultiRobotEnv(iGibsonEnv):
         :return: info: info dictionary with any useful information
         """
         self.current_step += 1
+        # if action is not None:
+        #     for single_action, robot in zip(action, self.robots):
+        #         robot.apply_action(single_action)
+        # collision_links = self.run_simulation()
+        # self.collision_links = collision_links
+        # for collision_link in collision_links:
+        #     if len(collision_link) > 0:
+        #         self.collision_step += 1
+        #         break
         if action is not None:
             for single_action, robot in zip(action, self.robots):
-                robot.apply_action(single_action)
-        collision_links = self.run_simulation()
-        self.collision_links = collision_links
-        for collision_link in collision_links:
-            if len(collision_link) > 0:
-                self.collision_step += 1
-                break
+                if single_action == 1:
+                    # import ipdb; ipdb.set_trace()
+                    old_robot_pos = robot.get_position()[:2]
+                    vel_error = 0.3
+                    propotion_vel = 2
+
+                    for i in range(25):
+                        if vel_error > 0.06:
+                            robot_pos = robot.get_position()[:2]
+                            vel_error = 0.3 - np.linalg.norm(robot_pos - old_robot_pos)
+                            motor_vel = vel_error * propotion_vel
+
+                            robot.apply_action([motor_vel, 0])
+                            collision_links = self.run_simulation()
+                            self.collision_links = collision_links
+                            for collision_link in collision_links:
+                                if len(collision_link) > 0:
+                                    self.collision_step += 1
+                                    break
+
+                if single_action == 3:
+
+                    old_robot_yaw = robot.get_rpy()[2]
+                    angle_error = - 10 / 180 * np.pi
+                    propotion_angle = 1.4
+                    for i in range(30):
+                        if angle_error < - 0.025:
+
+                            robot_yaw = robot.get_rpy()[2]
+                            angle_error = -10 / 180 * np.pi - (robot_yaw - old_robot_yaw)
+                            # print(angle_error)
+                            if angle_error < -np.pi:
+                                angle_error = angle_error + 2 * np.pi
+                            motor_angle = -propotion_angle * angle_error
+                            robot.apply_action([0, motor_angle])
+
+                            collision_links = self.run_simulation()
+                            self.collision_links = collision_links
+                            for collision_link in collision_links:
+                                if len(collision_link) > 0:
+                                    self.collision_step += 1
+                                    break
+                if single_action == 2:
+
+                    old_robot_yaw = robot.get_rpy()[2]
+                    angle_error = 10 / 180 * np.pi
+                    propotion_angle = 1.4
+                    for i in range(30):
+                        if angle_error > 0.025:
+
+                            robot_yaw = robot.get_rpy()[2]
+                            angle_error = 10 / 180 * np.pi - (robot_yaw - old_robot_yaw)
+                            if angle_error > np.pi:
+                                angle_error = angle_error - 2 * np.pi
+                            motor_angle = -propotion_angle * angle_error
+                            robot.apply_action([0, motor_angle])
+
+                            collision_links = self.run_simulation()
+                            self.collision_links = collision_links
+                            for collision_link in collision_links:
+                                if len(collision_link) > 0:
+                                    self.collision_step += 1
+                                    break
+
         state = self.get_state()
         info = {}
         info = self.task.get_obs_info(info)

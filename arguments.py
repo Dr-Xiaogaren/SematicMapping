@@ -140,7 +140,9 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
-    parser.add_argument('--global_num_step', type=int, default=20, help="Number of local steps in a global step")
+    parser.add_argument('--global_num_step', type=int, default=20,
+                        help="Number of local steps in a global step, "
+                             "or the update frequency of full map,nust be the factor of num_local_steps")
     parser.add_argument('--random_initial_location', type=bool, default=True)
     parser.add_argument('--min_initial_distance', type=float, default=0.5,
                         help="Minimum distance among random initial robot location")
