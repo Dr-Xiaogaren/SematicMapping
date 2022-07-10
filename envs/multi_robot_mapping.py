@@ -103,6 +103,18 @@ class MultiRobotEnv(iGibsonEnv):
         #         break
         if action is not None:
             for single_action, robot in zip(action, self.robots):
+
+                # Action remapping
+                if single_action == 2:  # Forward
+                    single_action = 1
+                    # noisy_action = habitat.SimulatorActions.NOISY_FORWARD
+                elif single_action == 1:  # Right
+                    single_action = 3
+                    # noisy_action = habitat.SimulatorActions.NOISY_RIGHT
+                elif single_action == 0:  # Left
+                    single_action = 2
+                    # noisy_action = habitat.SimulatorActions.NOISY_LEFT
+
                 if single_action == 1:
                     # import ipdb; ipdb.set_trace()
                     old_robot_pos = robot.get_position()[:2]

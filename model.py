@@ -363,7 +363,7 @@ class Local_IL_Policy(NNBase):
             resnet_output = self.resnet_l5(rgb[:, :3, :, :])
             conv_output = self.conv(resnet_output)
 
-            proj1 = nn.ReLU()(self.proj1(conv_output.view(
+            proj1 = nn.ReLU()(self.proj1(conv_output.contiguous().view(
                 -1, self.conv_output_size)))
             if self.dropout > 0:
                 proj1 = self.dropout1(proj1)

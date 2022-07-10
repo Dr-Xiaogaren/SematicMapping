@@ -9,9 +9,9 @@ def get_args():
     # General Arguments
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
-    parser.add_argument('--auto_gpu_config', type=int, default=1)
-    parser.add_argument('--total_num_scenes', type=str, default="4")
-    parser.add_argument('-n', '--num_processes', type=int, default=4,
+    parser.add_argument('--auto_gpu_config', type=int, default=0)
+    parser.add_argument('--total_num_scenes', type=str, default="1")
+    parser.add_argument('-n', '--num_processes', type=int, default=1,
                         help="""how many training processes to use (default:5)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus""")
@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument('--train_global', type=int, default=1,
                         help="""0: Do not train the Global Policy
                                         1: Train the Global Policy (default: 1)""")
-    parser.add_argument('--train_local', type=int, default=1,
+    parser.add_argument('--train_local', type=int, default=0,
                         help="""0: Do not train the Local Policy
                                         1: Train the Local Policy (default: 1)""")
 
@@ -112,6 +112,9 @@ def get_args():
                         help='ppo clip parameter (default: 0.2)')
     parser.add_argument('--use_recurrent_global', type=int, default=0,
                         help='use a recurrent global policy')
+    parser.add_argument('-el', '--max_episode_length', type=int, default=1000,
+                        help="""Maximum episode length in seconds for
+                                Doom (default: 180)""")
 
     # Local Policy
     parser.add_argument('--local_optimizer', type=str,

@@ -54,6 +54,22 @@ def render_global(global_map):
     plt.pause(0.5)
 
 
+def render_semantic(global_map):
+    plt.ion()
+    color_low = 0.07
+    # obstacle = np.where(global_map[0, :, :] > 0.5, 1, 0.0)
+    semantic_map = global_map[4:, :, :]
+    semantic_map = np.concatenate([np.zeros((1, semantic_map.shape[-2], semantic_map.shape[-1])), semantic_map])
+    semantic_map = semantic_map.argmax(0)
+    plot_map = np.zeros_like(global_map[0, :, :])
+    for class_id in range(1, 17):
+        index = np.where(semantic_map == class_id)
+        for r, c in zip(index[0].tolist(), index[1].tolist()):
+            plot_map[r][c] = color_low + 0.05 * class_id
+
+    axsimg = plt.imshow(plot_map, cmap='tab20')
+    plt.draw()
+    plt.pause(0.5)
 
 
 
@@ -72,9 +88,9 @@ def main():
         for i in range(100):
             # action = env.action_space.sample()
             # print("action", action)
-            # action_list = [(np.array([0.2, -0.2]), ), (np.array([0, 0.5]), ), (np.array([-0.2, 0.2]), )]
+            # action_list = [(np.array([0, -0.2]), ), (np.array([0, 0.5]), ), (np.array([0, 0.2]), )]
             # action = random.choice(action_list)
-            action = (np.array([0.0, 0.3]), np.array([0.0, 1.0]), np.array([0.0, 0.2]))
+            action = (np.array([0.0, 0.3]), np.array([0.0, 0.3]), np.array([0.0, 0.2]))
             state, reward, done, _ = env.step(action)
             linear_velocity = [robot.get_linear_velocity() for robot in env.robots]
             get_angular_velocity = [robot.get_angular_velocity() for robot in env.robots]
@@ -82,11 +98,17 @@ def main():
             max_lin_vel = max_wheel_joint_vels[0]*env.robots[0].wheel_radius
             max_ang_vel = max_lin_vel * 2.0 / env.robots[0].wheel_axle_length
             map = state["task_obs"]
-            semantic_map = map[2, 4:, :, :].argmax(0)
-            # plot(map[0][0])
-            render(map, 0)
-            global_map = env.task.get_merged_map()
-            # render_global(global_map)
+            semantic_map = map[0,:, :, :]
+            # seg = state['seg']
+            # seg_ground_truth = seg[0,: ,: ,0]/40
+            # plot(seg_ground_truth)
+            # render(map, 0)
+            # global_map = env.task.get_merged_map()
+            render_global(semantic_map)
+            # cdepth = state["depth"]
+            # render_semantic(semantic_map)
+            # path = env.scene.get_shortest_path(0, np.array([0, 0]), np.array([0, 1]), entire_path=False)
+            # print(path)
         # plt.close(fig)
 
 

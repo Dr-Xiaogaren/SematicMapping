@@ -68,6 +68,11 @@ def main():
     g_masks = torch.ones(num_scenes*num_robots).float().to(device)
     l_masks = torch.zeros(num_scenes*num_robots).float().to(device)
 
+    if args.eval:
+        traj_lengths = args.max_episode_length // args.num_local_steps
+        explored_area_log = np.zeros((num_scenes*num_robots, num_episodes, traj_lengths))
+        explored_ratio_log = np.zeros((num_scenes*num_robots, num_episodes, traj_lengths))
+
     best_local_loss = np.inf
     best_g_reward = -np.inf
 
@@ -85,7 +90,8 @@ def main():
 
     # Starting environments
     torch.set_num_threads(1)
-    envs = make_mp_envs(args, env_config, num_env=4, render_mode='headless', seed=0)
+    # headless, headless_tensor, gui_interactive, gui_non_interactive, vr
+    envs = make_mp_envs(args, env_config, num_env=args.num_processes, render_mode='headless', seed=0)
     obs, infos = envs.reset()
 
     torch.set_grad_enabled(False)
@@ -106,8 +112,8 @@ def main():
     # Local policy observation space
     l_observation_space = gym.spaces.Box(0, 255,
                                          (3,
-                                          args.frame_width,
-                                          args.frame_width), dtype='uint8')
+                                          args.env_frame_height,
+                                          args.env_frame_width), dtype='uint8')
 
     # Local and Global policy recurrent layer sizes
     l_hidden_size = args.local_hidden_size
@@ -183,7 +189,9 @@ def main():
 
     # Todo Deal with Chenkun for data
     # Output stores local goals as well as the the ground-truth action
+    global_goals = np.array([global_goals]).reshape(num_scenes, num_robots, 2).tolist()
     output = envs.get_short_term_goal(global_goals)
+    output = torch.tensor(np.array(output).reshape(num_scenes*num_robots, 3))
 
     local_rec_states = torch.zeros(num_scenes*num_robots, l_hidden_size).to(device)
     start = time.time()
@@ -194,30 +202,286 @@ def main():
     torch.set_grad_enabled(False)
 
     for ep_num in range(num_episodes):
+        g_step_reward = 0
         for step in range(args.max_episode_length):
             total_num_steps += 1
 
             g_step = (step // args.num_local_steps) % args.num_global_steps
             eval_g_step = step // args.num_local_steps + 1
             l_step = step % args.num_local_steps
+
             # ------------------------------------------------------------------
             # Local Policy
             local_masks = l_masks
+            # Todo exchange between numpy and torch
             local_goals = output[:, :-1].to(device).long()
 
             if args.train_local:
                 torch.set_grad_enabled(True)
 
+            local_input_np = np.array(obs['rgb'])
+            rgb_shape = np.shape(local_input_np)
+            local_input_np = local_input_np.reshape((-1, rgb_shape[-3], rgb_shape[-2], rgb_shape[-1]))
+            local_input_np = np.transpose(local_input_np, (0, 3, 1, 2))
+            local_input = torch.tensor(local_input_np).to(device)
             action, action_prob, local_rec_states = l_policy(
-                obs,
+                local_input,
                 local_rec_states,
                 local_masks,
                 extras=local_goals,
             )
 
+            if args.train_local:
+                action_target = output[:, -1].long().to(device)
+                policy_loss += nn.CrossEntropyLoss()(action_prob, action_target)
+                torch.set_grad_enabled(False)
+            l_action = action.cpu().numpy()
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Env step
+            # Todo fix the form of l_action to multi-robot situation
+            l_action = l_action.reshape(num_scenes, num_robots)
+            obs, rew, done, infos = envs.step(l_action)
+
+            # accumulate the reward of each local step to get global step reward
+            g_step_reward += rew
+
+            # mask is used to distinguish done agent
+            done_flatten = done.reshape(-1).tolist()
+            l_masks = torch.FloatTensor([0 if x else 1 for x in done_flatten]).to(device)
+            g_masks *= l_masks
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Global Policy
+            if l_step == args.num_local_steps - 1:
+                global_input = torch.tensor(obs['task_obs'].reshape(num_scenes * num_robots, 8, local_w, local_h))
+                global_orientation_np = np.array([info['global_orientation'] for info in infos])
+                global_orientation = torch.tensor(global_orientation_np.reshape(num_scenes * num_robots, 1))
+
+                # Get exploration reward and metrics
+                g_reward = torch.from_numpy(g_step_reward.reshape(-1)).float().to(device)
+
+                if args.eval:
+                    g_reward = g_reward*50.0 # Convert reward to area in m2
+
+                g_process_rewards += g_reward.cpu().numpy()
+                g_total_rewards = g_process_rewards * \
+                                  (1 - g_masks.cpu().numpy())
+                per_step_g_rewards.append(np.mean(g_reward.cpu().numpy()))
+
+                if np.sum(g_total_rewards) != 0:
+                    for tr in g_total_rewards:
+                        g_episode_rewards.append(tr) if tr != 0 else None
+
+                if args.eval:
+                    exp_ratio = torch.from_numpy(np.asarray(
+                        [infos[env_idx]['exp_ratio'] for env_idx
+                         in range(num_scenes)])
+                    ).float()
+
+                    for e in range(num_scenes*num_robots):
+                        explored_area_log[e, ep_num, eval_g_step - 1] = \
+                            explored_area_log[e, ep_num, eval_g_step - 2] + \
+                            g_reward[e].cpu().numpy()
+                        explored_ratio_log[e, ep_num, eval_g_step - 1] = \
+                            explored_ratio_log[e, ep_num, eval_g_step - 2] + \
+                            exp_ratio[e].cpu().numpy()
+
+                # Add samples to global policy storage
+                g_rollouts.insert(
+                    global_input, g_rec_states,
+                    g_action, g_action_log_prob, g_value,
+                    g_reward, g_masks, global_orientation
+                )
+
+                # Sample long-term goal from global policy
+                g_value, g_action, g_action_log_prob, g_rec_states = \
+                    g_policy.act(
+                        g_rollouts.obs[g_step + 1],
+                        g_rollouts.rec_states[g_step + 1],
+                        g_rollouts.masks[g_step + 1],
+                        extras=g_rollouts.extras[g_step + 1],
+                        deterministic=False
+                    )
+                cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
+                global_goals = [[int(action[0] * local_w),
+                                 int(action[1] * local_h)]
+                                for action in cpu_actions]
+
+                g_reward = 0
+                g_step_reward = 0
+                g_masks = torch.ones(num_scenes*num_robots).float().to(device)
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Get short term goal
+            global_goals = np.array([global_goals]).reshape(num_scenes, num_robots, 2).tolist()
+            output = envs.get_short_term_goal(global_goals)
+            output = torch.tensor(np.array(output).reshape(num_scenes * num_robots, 3))
+            # ------------------------------------------------------------------
+
+            ### TRAINING
+            torch.set_grad_enabled(True)
+            # ------------------------------------------------------------------
+            # Train Local Policy
+            if (l_step + 1) % args.local_policy_update_freq == 0 \
+                    and args.train_local:
+                local_optimizer.zero_grad()
+                policy_loss.backward()
+                local_optimizer.step()
+                l_action_losses.append(policy_loss.item())
+                policy_loss = 0
+                local_rec_states = local_rec_states.detach_()
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Train Global Policy
+            if g_step % args.num_global_steps == args.num_global_steps - 1 \
+                    and l_step == args.num_local_steps - 1:
+                if args.train_global:
+                    g_next_value = g_policy.get_value(
+                        g_rollouts.obs[-1],
+                        g_rollouts.rec_states[-1],
+                        g_rollouts.masks[-1],
+                        extras=g_rollouts.extras[-1]
+                    ).detach()
+
+                    g_rollouts.compute_returns(g_next_value, args.use_gae,
+                                               args.gamma, args.tau)
+                    g_value_loss, g_action_loss, g_dist_entropy = \
+                        g_agent.update(g_rollouts)
+                    g_value_losses.append(g_value_loss)
+                    g_action_losses.append(g_action_loss)
+                    g_dist_entropies.append(g_dist_entropy)
+                g_rollouts.after_update()
+            # ------------------------------------------------------------------
+
+            # Finish Training
+            torch.set_grad_enabled(False)
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Logging
+            if total_num_steps % args.log_interval == 0:
+                end = time.time()
+                time_elapsed = time.gmtime(end - start)
+                log = " ".join([
+                    "Time: {0:0=2d}d".format(time_elapsed.tm_mday - 1),
+                    "{},".format(time.strftime("%Hh %Mm %Ss", time_elapsed)),
+                    "num timesteps {},".format(total_num_steps *
+                                               num_scenes),
+                    "FPS {},".format(int(total_num_steps * num_scenes \
+                                         / (end - start)))
+                ])
+
+                log += "\n\tRewards:"
+
+                if len(g_episode_rewards) > 0:
+                    log += " ".join([
+                        " Global step mean/med rew:",
+                        "{:.4f}/{:.4f},".format(
+                            np.mean(per_step_g_rewards),
+                            np.median(per_step_g_rewards)),
+                        " Global eps mean/med/min/max eps rew:",
+                        "{:.3f}/{:.3f}/{:.3f}/{:.3f},".format(
+                            np.mean(g_episode_rewards),
+                            np.median(g_episode_rewards),
+                            np.min(g_episode_rewards),
+                            np.max(g_episode_rewards))
+                    ])
+
+                log += "\n\tLosses:"
+
+                if args.train_local and len(l_action_losses) > 0:
+                    log += " ".join([
+                        " Local Loss:",
+                        "{:.3f},".format(
+                            np.mean(l_action_losses))
+                    ])
+
+                if args.train_global and len(g_value_losses) > 0:
+                    log += " ".join([
+                        " Global Loss value/action/dist:",
+                        "{:.3f}/{:.3f}/{:.3f},".format(
+                            np.mean(g_value_losses),
+                            np.mean(g_action_losses),
+                            np.mean(g_dist_entropies))
+                    ])
+
+                print(log)
+                logging.info(log)
+            # ------------------------------------------------------------------
+
+            # ------------------------------------------------------------------
+            # Save best models
+            if (total_num_steps * num_scenes) % args.save_interval < \
+                    num_scenes:
+                # Save Local Policy Model
+                if len(l_action_losses) >= 100 and \
+                        (np.mean(l_action_losses) <= best_local_loss) \
+                        and not args.eval:
+                    torch.save(l_policy.state_dict(),
+                               os.path.join(log_dir, "model_best.local"))
+
+                    best_local_loss = np.mean(l_action_losses)
+
+                # Save Global Policy Model
+                if len(g_episode_rewards) >= 100 and \
+                        (np.mean(g_episode_rewards) >= best_g_reward) \
+                        and not args.eval:
+                    torch.save(g_policy.state_dict(),
+                               os.path.join(log_dir, "model_best.global"))
+                    best_g_reward = np.mean(g_episode_rewards)
+
+            # Save periodic models
+            if (total_num_steps * num_scenes) % args.save_periodic < \
+                    num_scenes:
+                step = total_num_steps * num_scenes
+                if args.train_local:
+                    torch.save(l_policy.state_dict(),
+                               os.path.join(dump_dir,
+                                            "periodic_{}.local".format(step)))
+                if args.train_global:
+                    torch.save(g_policy.state_dict(),
+                               os.path.join(dump_dir,
+                                            "periodic_{}.global".format(step)))
+            # ------------------------------------------------------------------
+
+    # Print and save model performance numbers during evaluation
+    if args.eval:
+        logfile = open("{}/explored_area.txt".format(dump_dir), "w+")
+        for e in range(num_scenes):
+            for i in range(explored_area_log[e].shape[0]):
+                logfile.write(str(explored_area_log[e, i]) + "\n")
+                logfile.flush()
+
+        logfile.close()
+
+        logfile = open("{}/explored_ratio.txt".format(dump_dir), "w+")
+        for e in range(num_scenes):
+            for i in range(explored_ratio_log[e].shape[0]):
+                logfile.write(str(explored_ratio_log[e, i]) + "\n")
+                logfile.flush()
+
+        logfile.close()
+
+        log = "Final Exp Area: \n"
+        for i in range(explored_area_log.shape[2]):
+            log += "{:.5f}, ".format(
+                np.mean(explored_area_log[:, :, i]))
+
+        log += "\nFinal Exp Ratio: \n"
+        for i in range(explored_ratio_log.shape[2]):
+            log += "{:.5f}, ".format(
+                np.mean(explored_ratio_log[:, :, i]))
+
+        print(log)
+        logging.info(log)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
 
 
