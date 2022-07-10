@@ -12,6 +12,10 @@ def worker(remote, parent_remote, env_fn_wrappers):
         #     ob, info = env.reset()
         return ob, reward, done, info
 
+    def get_short_term_goal(env, global_goals):
+        output = env.task.get_short_term_goal(global_goals)
+        return output
+
     parent_remote.close()
     envs = [env_fn_wrapper() for env_fn_wrapper in env_fn_wrappers.x]
     try:
@@ -21,6 +25,8 @@ def worker(remote, parent_remote, env_fn_wrappers):
                 remote.send([step_env(env, action) for env, action in zip(envs, data)])
             elif cmd == 'reset':
                 remote.send([env.reset() for env in envs])
+            elif cmd == 'get_short_term_goal':
+                remote.send([get_short_term_goal(env, goal) for env, goal in zip(envs, data)])
             elif cmd == 'close':
                 remote.close()
                 break
@@ -93,6 +99,15 @@ class SubprocVecEnv(VecEnv):
         results1 = _flatten_list(results1)
         obs, infos = zip(*results1)
         return _flatten_obs(obs), infos
+
+    def get_short_term_goal(self, goals):
+        self._assert_not_closed()
+        goals = np.array_split(goals, self.nremotes)
+        for remote, goal in zip(self.remotes, goals):
+            remote.send(('get_short_term_goal', goal))
+        results = [remote.recv() for remote in self.remotes]
+        results = _flatten_list(results)
+        return results
 
     def close_extras(self):
         self.closed = True
