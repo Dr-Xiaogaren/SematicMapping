@@ -25,6 +25,8 @@ from .reward_functions import ExploreReward
 import envs.utils.pose as pu
 from envs.utils.fmm_planner import FMMPlanner
 import skimage.morphology
+import matplotlib.pyplot as plt
+
 
 class SemanticMappingTask(BaseTask):
     """
@@ -360,6 +362,9 @@ class SemanticMappingTask(BaseTask):
         global_map[:, :, x1:x2, y1:y2] = self.local_map
 
         st_pose = self.poses.clone().detach()
+        off_set = self.local_pose[:, :2]-torch.tensor([self.local_w//2*self.args.map_resolution/100,
+                                                       self.local_h//2*self.args.map_resolution/100]).to(self.device)
+        st_pose[:, :2] = st_pose[:, :2] - off_set
         st_pose[:, :2] += (global_map_size//2)*self.args.map_resolution/100
         # offset to the local map center (proportion)
         st_pose[:, :2] = - (st_pose[:, :2] * 100.0 / self.args.map_resolution - global_map_size/2) / (global_map_size/2)
@@ -385,6 +390,8 @@ class SemanticMappingTask(BaseTask):
         global_orientation_np = global_orientation.cpu().numpy()
         global_orientation_np = global_orientation_np.astype(int)
         info['global_orientation'] = global_orientation_np
+        info['merged_map'] = self.get_merged_map()
+        info['render_message'] = self.local_map.cpu().numpy()[:, 0:4, :, :]
 
         return info
 
@@ -440,7 +447,7 @@ class SemanticMappingTask(BaseTask):
         stg = self._get_stg(grid, explored, start, np.copy(goal), planning_window)
 
         # Find GT action
-        if self.args.eval or not self.args.train_local:
+        if not self.args.use_fmm_action:
             gt_action = 0
         else:
             gt_action = self._get_gt_action(np.rint(inputs['explorable_map']), start,
@@ -483,7 +490,6 @@ class SemanticMappingTask(BaseTask):
         output[0] = int((relative_angle%360.)/5.)
         output[1] = discretize(relative_dist)
         output[2] = gt_action
-
 
         return output
 

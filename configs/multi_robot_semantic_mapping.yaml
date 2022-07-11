@@ -1,6 +1,6 @@
 # scene
 scene: gibson
-scene_id: Rs
+scene_id: Shingler
 build_graph: true
 load_texture: true
 pybullet_load_texture: true
@@ -87,7 +87,7 @@ vertical_fov: 45
 camera_elevation_degree: -20
 camera_height: 0.87
 # depth
-depth_low: 0.5
+depth_low: 0.1
 depth_high: 5
 # sensor noise
 depth_noise_rate: 0.0

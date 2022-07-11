@@ -16,13 +16,14 @@ from utils.storage import GlobalRolloutStorage
 from utils.optimization import get_optimizer
 from model import RL_Policy, Local_IL_Policy, Neural_SLAM_Module
 from igibson.utils.utils import parse_config
+import envs.utils.render_utils as vu
 import algo
 
 import sys
 import matplotlib
 
-if sys.platform == 'darwin':
-    matplotlib.use("tkagg")
+# if sys.platform == 'darwin':
+#     matplotlib.use("tkagg")
 import matplotlib.pyplot as plt
 
 torch.multiprocessing.set_start_method('spawn', force=True)
@@ -35,6 +36,7 @@ torch.manual_seed(args.seed)
 
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
+
 
 def main():
     # Setup Logging
@@ -52,6 +54,10 @@ def main():
     print("Dumping at {}".format(log_dir))
     print(args)
     logging.info(args)
+
+    # for visualization
+    if args.visualize:
+        figure = plt.figure()
 
     # Logging and loss variables
     num_robots = env_config['n_robots']
@@ -91,7 +97,7 @@ def main():
     # Starting environments
     torch.set_num_threads(1)
     # headless, headless_tensor, gui_interactive, gui_non_interactive, vr
-    envs = make_mp_envs(args, env_config, num_env=args.num_processes, render_mode='headless', seed=0)
+    envs = make_mp_envs(args, env_config, num_env=args.num_processes, render_mode=args.render_mode, seed=0)
     obs, infos = envs.reset()
 
     torch.set_grad_enabled(False)
@@ -242,6 +248,11 @@ def main():
             # Env step
             # Todo fix the form of l_action to multi-robot situation
             l_action = l_action.reshape(num_scenes, num_robots)
+
+            if args.use_fmm_action:
+                l_action = output.cpu().numpy()[:, -1]
+                l_action = l_action.reshape(num_scenes, num_robots)
+
             obs, rew, done, infos = envs.step(l_action)
 
             # accumulate the reward of each local step to get global step reward
@@ -253,6 +264,14 @@ def main():
             g_masks *= l_masks
             # ------------------------------------------------------------------
 
+            # Visualize
+            if args.visualize:
+                vu.plot_single(infos[0]['merged_map'][0, :, :])
+                # vu.plot_single(obs['task_obs'][0, 0, 0:4, :, :])
+                # vu.plot_single_robot(obs['task_obs'][0, 0, 0:4, :, :], global_goals[0][0])
+                # plt.ion()
+                # plt.plot(infos[0]['merged_map'][0, :, :])
+                # plt.pause(0.1)
             # ------------------------------------------------------------------
             # Global Policy
             if l_step == args.num_local_steps - 1:
@@ -275,19 +294,19 @@ def main():
                     for tr in g_total_rewards:
                         g_episode_rewards.append(tr) if tr != 0 else None
 
-                if args.eval:
-                    exp_ratio = torch.from_numpy(np.asarray(
-                        [infos[env_idx]['exp_ratio'] for env_idx
-                         in range(num_scenes)])
-                    ).float()
-
-                    for e in range(num_scenes*num_robots):
-                        explored_area_log[e, ep_num, eval_g_step - 1] = \
-                            explored_area_log[e, ep_num, eval_g_step - 2] + \
-                            g_reward[e].cpu().numpy()
-                        explored_ratio_log[e, ep_num, eval_g_step - 1] = \
-                            explored_ratio_log[e, ep_num, eval_g_step - 2] + \
-                            exp_ratio[e].cpu().numpy()
+                # if args.eval:
+                #     exp_ratio = torch.from_numpy(np.asarray(
+                #         [infos[env_idx]['exp_ratio'] for env_idx
+                #          in range(num_scenes)])
+                #     ).float()
+                #
+                #     for e in range(num_scenes*num_robots):
+                #         explored_area_log[e, ep_num, eval_g_step - 1] = \
+                #             explored_area_log[e, ep_num, eval_g_step - 2] + \
+                #             g_reward[e].cpu().numpy()
+                #         explored_ratio_log[e, ep_num, eval_g_step - 1] = \
+                #             explored_ratio_log[e, ep_num, eval_g_step - 2] + \
+                #             exp_ratio[e].cpu().numpy()
 
                 # Add samples to global policy storage
                 g_rollouts.insert(

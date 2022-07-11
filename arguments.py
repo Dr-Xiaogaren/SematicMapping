@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument("--sem_gpu_id", type=int, default=-1,
                         help="""gpu id for semantic model,
                                 -1: same as sim gpu, -2: cpu""")
-    parser.add_argument('-v', '--visualize', type=int, default=0,
+    parser.add_argument('-v', '--visualize', type=int, default=1,
                         help="""1: Render the observation and
                                        the predicted semantic map,
                                     2: Render the observation with semantic
@@ -47,6 +47,8 @@ def get_args():
     parser.add_argument('--train_local', type=int, default=0,
                         help="""0: Do not train the Local Policy
                                         1: Train the Local Policy (default: 1)""")
+    parser.add_argument('--use_fmm_action', type=int, default=1,
+                        help="""use the fmm planner local action""")
 
     # Logging, loading models, visualization
     parser.add_argument('--log_interval', type=int, default=10,
@@ -80,6 +82,8 @@ def get_args():
     parser.add_argument('--num_sem_categories', type=float, default=16)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
+    parser.add_argument('--render_mode', type=str, default='headless',
+                        help="headless, headless_tensor, gui_interactive, gui_non_interactive")
 
     ## Global Policy RL PPO Hyperparameters
     parser.add_argument('--global_lr', type=float, default=2.5e-5,
@@ -143,15 +147,16 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
-    parser.add_argument('--obstacle_boundary', type=int, default=5)
+    parser.add_argument('--obstacle_boundary', type=int, default=20,
+                        help="The radius of robot size, used to generate configuration space")
     parser.add_argument('-ot', '--obs_threshold', type=float, default=1)
     parser.add_argument('--global_num_step', type=int, default=20,
                         help="Number of local steps in a global step, "
                              "or the update frequency of full map,nust be the factor of num_local_steps")
     parser.add_argument('--random_initial_location', type=bool, default=True)
-    parser.add_argument('--min_initial_distance', type=float, default=0.5,
+    parser.add_argument('--min_initial_distance', type=float, default=1.0,
                         help="Minimum distance among random initial robot location")
-    parser.add_argument('--max_initial_distance', type=float, default=5.0,
+    parser.add_argument('--max_initial_distance', type=float, default=10.0,
                         help="Maximum distance among random initial robot location")
     parser.add_argument('--goals_size', type=int, default=2)
 
