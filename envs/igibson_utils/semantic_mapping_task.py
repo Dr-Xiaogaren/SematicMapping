@@ -71,6 +71,7 @@ class SemanticMappingTask(BaseTask):
 
         # Initializing full and local map
         self.full_map = torch.zeros(env.n_robots, self.nc, self.full_w, self.full_h).float().to(self.device)
+        self.global_map = torch.zeros(self.nc, self.full_w, self.full_h).float().to(self.device)
         self.local_map = torch.zeros(env.n_robots, self.nc, self.local_w, self.local_h).float().to(self.device)
         self.last_full_map = torch.zeros(env.n_robots, self.nc, self.full_w, self.full_h).float().to(self.device).cpu().numpy()
 
@@ -128,6 +129,7 @@ class SemanticMappingTask(BaseTask):
 
     def init_map_and_pose(self, env):
         self.full_map.fill_(0.)
+        self.global_map.fill_(0.)
         self.full_pose.fill_(0.)  # absolute coordinate
         self.full_pose[:, :2] = self.args.map_size_cm / 100.0 / 2.0  # center of the grid map (m)
 
@@ -186,9 +188,13 @@ class SemanticMappingTask(BaseTask):
         if self.args.random_initial_location:
             initial_pos = []
             travel_map = env.scene.floor_map[0]
+            travel_map = travel_map > 0
             travel_map_revolution = env.scene.trav_map_resolution
             grid_length = travel_map.shape[0]
-            index_travelable = np.where(travel_map == 255)
+            safe_traversible = skimage.morphology.binary_erosion(
+                travel_map,
+                self.selem)
+            index_travelable = np.where(safe_traversible == 1)
             for i in range(self.n_robots):
                 choose = random.randrange(0, index_travelable[0].shape[0])
                 y = (float(index_travelable[0][choose])-grid_length//2)*travel_map_revolution
@@ -302,7 +308,7 @@ class SemanticMappingTask(BaseTask):
                             int(c * 100.0 / self.args.map_resolution)]
             self.local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
 
-        if env.current_step % self.args.global_num_step == 0:
+        if (env.current_step-1) % self.args.num_local_steps -1 == self.args.num_local_steps - 1:
             self.last_full_map = self.full_map.cpu().numpy()
             # For every global step, update the full and local maps
             for e in range(self.n_robots):
@@ -375,7 +381,11 @@ class SemanticMappingTask(BaseTask):
 
         map_merged, _ = torch.max(translated, 0)
 
-        return map_merged.cpu().numpy()
+        pre_merged = torch.stack([self.global_map, map_merged])
+
+        self.global_map, _ = torch.max(pre_merged, 0)
+
+        return self.global_map.cpu().numpy()
 
     # Todo Finish the bottomed planning
     def plan_to_goal(self, robot, goal):
@@ -391,7 +401,9 @@ class SemanticMappingTask(BaseTask):
         global_orientation_np = global_orientation_np.astype(int)
         info['global_orientation'] = global_orientation_np
         info['merged_map'] = self.get_merged_map()
-        info['render_message'] = self.local_map.cpu().numpy()[:, 0:4, :, :]
+        info['render_message'] = self.full_map.cpu().numpy()
+        info['lmb'] = self.lmb
+        info['current_loc'] = self.full_pose.cpu().numpy()
 
         return info
 

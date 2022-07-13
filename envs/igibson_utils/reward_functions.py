@@ -24,6 +24,6 @@ class ExploreReward(BaseRewardFunction):
         current_explored_map = task.full_map.cpu().numpy()[:, 1, :, :]
         last_explored_map = task.last_full_map[:, 1, :, :]
         for i in range(env.n_robots):
-            reward[i] += np.sum(np.sum(current_explored_map-last_explored_map,axis=-1),axis=-1)[i]
+            reward[i] += np.sum(np.sum(current_explored_map-last_explored_map,axis=-1),axis=-1)[i]/100
         task.last_full_map = task.full_map.cpu().numpy()
         return reward
