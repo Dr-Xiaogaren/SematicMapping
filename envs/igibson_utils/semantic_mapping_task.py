@@ -401,9 +401,9 @@ class SemanticMappingTask(BaseTask):
         global_orientation_np = global_orientation_np.astype(int)
         info['global_orientation'] = global_orientation_np
         info['merged_map'] = self.get_merged_map()
-        info['render_message'] = self.full_map.cpu().numpy()
+        info['render_message'] = self.local_map.cpu().numpy()
         info['lmb'] = self.lmb
-        info['current_loc'] = self.full_pose.cpu().numpy()
+        info['current_loc'] = self.local_pose.cpu().numpy()
 
         return info
 
