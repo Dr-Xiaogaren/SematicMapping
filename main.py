@@ -26,7 +26,7 @@ import matplotlib
 #     matplotlib.use("tkagg")
 import matplotlib.pyplot as plt
 
-torch.multiprocessing.set_start_method('spawn', force=True)
+
 args = get_args()
 env_config_file = "configs/multi_robot_semantic_mapping.yaml"
 env_config = parse_config(env_config_file)
@@ -39,6 +39,7 @@ if args.cuda:
 
 
 def main():
+    torch.multiprocessing.set_start_method('spawn')
     # Setup Logging
     log_dir = "{}/models/{}/".format(args.dump_location, args.exp_name)
     dump_dir = "{}/dump/{}/".format(args.dump_location, args.exp_name)
@@ -57,7 +58,9 @@ def main():
 
     # for visualization
     if args.visualize:
-        figure = plt.figure()
+        figure, ax = plt.subplots(1, 3, figsize=(6 * 16 / 9, 6),
+                                            facecolor="whitesmoke")
+
 
     # Logging and loss variables
     num_robots = env_config['n_robots']
@@ -266,8 +269,19 @@ def main():
 
             # Visualize
             if args.visualize:
-                vu.plot_single(infos[0]['merged_map'][0, :, :])
-                # vu.plot_single(obs['task_obs'][0, 0, 0:4, :, :])
+                render_robot_id = 0
+                single_vis_grid = vu.get_robot_colored_map(robot_id=render_robot_id,
+                                                           grid_map=infos[0]['render_message'][:, 0:4, :, :],goal=global_goals[0])
+                global_view_grid = vu.get_global_colored_map(infos[0]['merged_map'])
+                vu.visualize_robot(figure, ax, obs['rgb'][0][render_robot_id], single_vis_grid[:, :, ::-1], global_view_grid[:, :, ::-1],
+                             infos[0]['current_loc'][render_robot_id],
+                             infos[0]['current_loc'][render_robot_id],
+                             dump_dir, 0, ep_num,
+                             step, args.visualize,
+                             print_images=1)
+
+                # vu.plot_single(infos[0]['merged_map'][0, :, :])
+                # vu.plot_single(obs['task_obs'][0, 0, 0, :, :])
                 # vu.plot_single_robot(obs['task_obs'][0, 0, 0:4, :, :], global_goals[0][0])
                 # plt.ion()
                 # plt.plot(infos[0]['merged_map'][0, :, :])

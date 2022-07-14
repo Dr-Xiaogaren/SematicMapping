@@ -147,7 +147,7 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
-    parser.add_argument('--obstacle_boundary', type=int, default=20,
+    parser.add_argument('--obstacle_boundary', type=int, default=25,
                         help="The radius of robot size, used to generate configuration space")
     parser.add_argument('-ot', '--obs_threshold', type=float, default=1)
     parser.add_argument('--global_num_step', type=int, default=20,
